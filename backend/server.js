@@ -160,6 +160,59 @@ if (emailTransporter) {
   console.log(`⚠️ Gmail SMTP not configured yet. Set GMAIL_USER and GMAIL_APP_PASSWORD on Render to send real emails.`);
 }
 
+// ━━━ DIAGNOSTIC ENDPOINT ━━━
+app.get('/api/debug/mail-test', async (req, res) => {
+  const targetEmail = req.query.to || emailUser || 'rohitranjan9798490472@gmail.com';
+  const diagnostics = {
+    configuredUser: emailUser,
+    hasPassword: !!emailPass,
+    passwordLength: emailPass ? emailPass.length : 0,
+    hasTransporter: !!emailTransporter
+  };
+
+  if (!emailTransporter) {
+    return res.json({
+      status: 'NOT_CONFIGURED',
+      diagnostics,
+      message: 'emailTransporter is null. Make sure GMAIL_APP_PASSWORD is set in Render environment variables.'
+    });
+  }
+
+  try {
+    console.log(`[DEBUG] Verifying SMTP connection for ${emailUser}...`);
+    await emailTransporter.verify();
+    diagnostics.smtpConnected = true;
+
+    console.log(`[DEBUG] Sending test email to ${targetEmail}...`);
+    const info = await emailTransporter.sendMail({
+      from: `"Janaki PrepAcademy" <${emailUser}>`,
+      to: targetEmail,
+      subject: `Test OTP from Janaki PrepAcademy`,
+      text: `Hello! This is a test email confirming your Janaki PrepAcademy OTP service is working!`,
+      html: `<h3>Janaki PrepAcademy</h3><p>Your OTP email delivery is working perfectly!</p>`
+    });
+
+    diagnostics.messageId = info.messageId;
+    diagnostics.response = info.response;
+
+    return res.json({
+      status: 'SUCCESS',
+      diagnostics,
+      message: `Test email successfully sent to ${targetEmail}`
+    });
+  } catch (err) {
+    diagnostics.smtpConnected = false;
+    diagnostics.error = err.message;
+    diagnostics.code = err.code;
+    diagnostics.command = err.command;
+    return res.json({
+      status: 'FAILED',
+      diagnostics,
+      message: err.message
+    });
+  }
+});
+
 // ━━━ AUTHENTICATION ENDPOINTS ━━━
 
 // Send Gmail OTP (Non-blocking async dispatch)
