@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -72,6 +73,11 @@ dependencies {
 
     // DataStore (User preferences / onboarding state)
     implementation(libs.androidx.datastore.preferences)
+
+    // Firebase Authentication & Google Sign-In
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.play.services.auth)
 
     // Testing
     testImplementation(libs.junit)

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "531378745826",
+    "project_id": "janakiprepacademy",
+    "storage_bucket": "janakiprepacademy.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:531378745826:android:f204ce37bfa253c33709bb",
+        "android_client_info": {
+          "package_name": "com.example.janakiprepacademy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmVKBQcqEpuMtqM8RHpqJ5_fGTwebLADI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

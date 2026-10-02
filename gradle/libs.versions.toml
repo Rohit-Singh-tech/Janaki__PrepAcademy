@@ -16,6 +16,9 @@ okhttpVersion = "4.12.0"
 gsonVersion = "2.12.1"
 datastoreVersion = "1.1.7"
 materialIconsExtended = "1.7.8"
+googleServicesPlugin = "4.4.2"
+firebaseBom = "33.10.0"
+playServicesAuth = "21.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -55,7 +58,13 @@ gson = { group = "com.google.code.gson", name = "gson", version.ref = "gsonVersi
 # DataStore Preferences
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastoreVersion" }
 
+# Firebase & Google Play Services
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "kspVersion" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServicesPlugin" }
