@@ -13,12 +13,12 @@ app.use(express.json({ limit: '10mb' }));
 // Free tier has 1GB DB storage and 100MB RAM, so max 3 connections is optimal.
 const pool = process.env.DATABASE_URL
   ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      max: 3,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    })
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    max: 3,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  })
   : null;
 
 // In-memory mock data store for immediate out-of-the-box local development & testing
@@ -132,17 +132,17 @@ app.get('/api/health', (req, res) => {
 
 // ━━━ Gmail SMTP Transporter for Real OTP Delivery ━━━
 const nodemailer = require('nodemailer');
-const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER || 'rohitkumar602@gmail.com';
+const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER || 'singhrohitkumar602@gmail.com';
 const emailPass = process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS;
 
 const emailTransporter = (emailUser && emailPass)
   ? nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: emailUser,
-        pass: emailPass
-      }
-    })
+    service: 'gmail',
+    auth: {
+      user: emailUser,
+      pass: emailPass
+    }
+  })
   : null;
 
 if (emailTransporter) {
@@ -258,7 +258,7 @@ app.post('/api/auth/login', (req, res) => {
   // Student check
   const user = MOCK_USERS.find(
     u => (u.email.toLowerCase() === cleanId.toLowerCase() || u.name.toLowerCase() === cleanId.toLowerCase()) &&
-         u.password === password
+      u.password === password
   );
 
   if (user) {
