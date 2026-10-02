@@ -148,21 +148,11 @@ const emailPass = rawEmailPass.replace(/\s+/g, '').trim();
 
 const emailTransporter = (emailUser && emailPass)
   ? nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      lookup: forceIPv4Lookup, // GUANRANTEES IPv4
+      service: 'gmail',
       auth: {
         user: emailUser,
         pass: emailPass
-      },
-      tls: {
-        servername: 'smtp.gmail.com',
-        rejectUnauthorized: false
-      },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000
+      }
     })
   : null;
 
