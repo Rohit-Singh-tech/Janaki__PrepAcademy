@@ -82,6 +82,10 @@ dependencies {
     // PDF Text Extraction (100% Free / Open Source Apache 2.0)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
+    // Free On-Device OCR for Scanned / Image PDFs (Google ML Kit, 100% Free / Local)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

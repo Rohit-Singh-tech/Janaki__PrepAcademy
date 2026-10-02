@@ -1,27 +1,37 @@
 package com.example.janakiprepacademy.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import com.example.janakiprepacademy.data.model.Question
 import com.example.janakiprepacademy.data.model.QuestionOption
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.InputStream
 import java.util.UUID
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * High-performance, 100% Free / Open Source (Apache 2.0)
  * PDF & Document Question Extractor for Janaki PrepAcademy.
  *
- * Extracts text from digital PDFs and plain text question papers,
- * and parses them into structured Question & QuestionOption models
- * with bilingual English + Hindi and 4 or 5 option support.
- *
- * Fully supports official state board formats including:
- * - Bihar STET / BSEB / TCS official CBT response sheets (with Question Ids, Option Ids, and Right Option Ids)
- * - BPSC TRE / BPSC CCE question papers
- * - General coaching and standard question formats (Q1., Question 1:, 1., प्रश्न 1:, etc.)
+ * Supports:
+ * 1. Digital text PDFs (PDFBox text stripper)
+ * 2. Scanned / Photo / Image-based PDFs (100% Free On-Device Google ML Kit Devanagari + English OCR)
+ * 3. Official state board formats:
+ *    - Bihar STET 2024 / Sify / Testbook (QID : 301-450, Options 1-4)
+ *    - Bihar STET 2023 / BSEB / TCS (Question Id, Option Id, Right Option Id)
+ *    - Bihar STET 2020 Re-Exam / Scanned Papers (Photo booklets with Hindi/English side-by-side options)
+ *    - Standard question formats (Q1., Question 1:, 1., प्रश्न 1:, etc.)
  */
 object PdfQuestionExtractor {
 
@@ -39,9 +49,11 @@ object PdfQuestionExtractor {
     }
 
     /**
-     * Extracts plain text from a given document Uri (PDF or TXT).
+     * Extracts text from a given document Uri (PDF or TXT).
+     * Automatically falls back to Google ML Kit On-Device Devanagari + English OCR
+     * if the PDF is scanned or image-based (e.g. 2020 Re-Exam paper).
      */
-    fun extractTextFromUri(context: Context, uri: Uri): Result<String> {
+    suspend fun extractTextFromUri(context: Context, uri: Uri): Result<String> {
         return try {
             val contentResolver = context.contentResolver
             val mimeType = contentResolver.getType(uri) ?: ""
@@ -59,33 +71,107 @@ object PdfQuestionExtractor {
             } else {
                 // PDF extraction
                 ensurePdfBoxInit(context)
-                val inputStream: InputStream? = contentResolver.openInputStream(uri)
-                if (inputStream == null) {
-                    return Result.failure(Exception("Cannot open file stream for selected document."))
+                var extractedText = ""
+                var pageCount = 0
+
+                try {
+                    contentResolver.openInputStream(uri)?.use { stream ->
+                        val document = PDDocument.load(stream)
+                        val stripper = PDFTextStripper()
+                        stripper.sortByPosition = true
+                        extractedText = stripper.getText(document)
+                        pageCount = document.numberOfPages
+                        document.close()
+                    }
+                } catch (e: Exception) {
+                    // PDFBox fallback
                 }
 
-                inputStream.use { stream ->
-                    val document = PDDocument.load(stream)
-                    val stripper = PDFTextStripper()
-                    stripper.sortByPosition = true
-                    val extractedText = stripper.getText(document)
-                    document.close()
+                // Evaluate whether the digital text contains real questions or only watermarks/links
+                val stripped = extractedText
+                    .replace(Regex("https?://[^\\s]+"), "")
+                    .replace(Regex("Page-\\s*\\d+", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
 
-                    if (extractedText.isNotBlank()) {
-                        Result.success(extractedText)
-                    } else {
-                        Result.failure(
-                            Exception(
-                                "No digital text found in this PDF.\n" +
-                                "It appears to be a scanned image or photo PDF.\n" +
-                                "Please copy-paste the text using 'Paste Paper Text' or use a digital text file."
-                            )
-                        )
+                // If digital text is empty or predominantly image-based (< 35 real characters per page),
+                // automatically activate on-device Google ML Kit Devanagari OCR
+                val isScannedPdf = extractedText.isBlank() || (pageCount > 0 && stripped.length / pageCount < 35)
+
+                if (isScannedPdf) {
+                    val ocrResult = extractTextViaOcr(context, uri)
+                    if (ocrResult.isSuccess && ocrResult.getOrNull()?.isNotBlank() == true) {
+                        return ocrResult
                     }
+                }
+
+                if (extractedText.isNotBlank()) {
+                    Result.success(extractedText)
+                } else {
+                    Result.failure(
+                        Exception(
+                            "No text could be extracted from this PDF.\n" +
+                            "Please ensure the document contains readable text or clear page scans."
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
             Result.failure(Exception("Failed to read document: ${e.localizedMessage ?: "Unknown error"}", e))
+        }
+    }
+
+    /**
+     * Free, on-device OCR using Google ML Kit Devanagari & Latin Text Recognizer.
+     * Renders each page of the scanned PDF into a high-resolution Bitmap and extracts
+     * both Hindi and English text directly on the device with zero cloud or API cost.
+     */
+    suspend fun extractTextViaOcr(context: Context, uri: Uri): Result<String> {
+        return try {
+            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                ?: return Result.failure(Exception("Cannot open PDF file descriptor"))
+
+            val renderer = PdfRenderer(pfd)
+            val recognizer = TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
+
+            val sb = StringBuilder()
+            val pageCount = renderer.pageCount
+
+            for (i in 0 until pageCount) {
+                val page = renderer.openPage(i)
+                val scale = 1.5f
+                val width = (page.width * scale).toInt().coerceAtLeast(1)
+                val height = (page.height * scale).toInt().coerceAtLeast(1)
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close()
+
+                val inputImage = InputImage.fromBitmap(bitmap, 0)
+                val visionText = suspendCancellableCoroutine<com.google.mlkit.vision.text.Text> { cont ->
+                    recognizer.process(inputImage)
+                        .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+                        .addOnFailureListener { if (cont.isActive) cont.resumeWithException(it) }
+                }
+
+                sb.append("\n--- PAGE ${i + 1} ---\n")
+                sb.append(visionText.text)
+                bitmap.recycle()
+            }
+
+            renderer.close()
+            pfd.close()
+            recognizer.close()
+
+            val result = sb.toString()
+            if (result.isNotBlank()) {
+                Result.success(result)
+            } else {
+                Result.failure(Exception("OCR could not recognize text in this scanned PDF."))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("On-device OCR failed: ${e.localizedMessage ?: "Unknown error"}", e))
         }
     }
 
@@ -114,7 +200,7 @@ object PdfQuestionExtractor {
      * Automatically detects:
      * 1. Bihar STET 2024 / Sify / Testbook CBT response sheets (with QID : <ID> and Options: 1-4)
      * 2. Bihar STET 2023 / BSEB / TCS CBT response sheets (with Question Ids, Option Ids, and Right Option Ids)
-     * 3. General coaching and standard question formats (Q1., Question 1:, 1., प्रश्न 1:, etc.)
+     * 3. Scanned papers & General formats (side-by-side options, Q1., Question 1:, 1., प्रश्न 1:, etc.)
      */
     fun parseQuestionsFromDocumentText(text: String, defaultSection: String = "Uploaded Section"): List<Question> {
         val normalized = normalizeText(text)
@@ -409,7 +495,8 @@ object PdfQuestionExtractor {
     }
 
     /**
-     * Enhanced general parser for standard question papers (1., Q1., Question 1:, प्रश्न 1:, etc.)
+     * Enhanced general parser for standard question papers and scanned papers.
+     * Supports side-by-side options (A) (B) on the same line, Hindi questions, etc.
      */
     private fun parseGeneralQuestions(text: String, defaultSection: String): List<Question> {
         val result = mutableListOf<Question>()
@@ -421,12 +508,13 @@ object PdfQuestionExtractor {
         var currentAns = "A"
         var currentExp = ""
 
-        // Matches: "Question 1", "Question 1:", "Q.1", "Q1.", "1.", "1)", "प्रश्न 1:", "प्र. 1"
-        val qRegex = Regex("^(?:(?:Q(?:uestion)?|प्रश्न|प्र)\\s*[.:\\-]?\\s*(\\d+)[.:\\)\\-–—]?\\s*|(\\d+)[.:\\)\\-–—]\\s*)(.*)", RegexOption.IGNORE_CASE)
-        val optRegex = Regex("^[({\\[]?([A-Ea-eक-ङ1-5])[.:\\)\\]}\\-–—]\\s*(.*)")
-        val ansRegex = Regex("(?:Right\\s*Option\\s*Id|Right\\s*Answer|Answer|Ans|उत्तर|Correct\\s*Option|Key)\\s*[:\\-–—.]?\\s*[({\\[]?([A-Ea-eक-ङ1-5]?)[)\\]}]?\\s*(.*)", RegexOption.IGNORE_CASE)
-        val expRegex = Regex("(?:Explanation|Solution|व्याख्या|हल)\\s*[:\\-–—.]?\\s*(.*)", RegexOption.IGNORE_CASE)
-        val secRegex = Regex("^(?:Section|Subject|विषय|खंड|भाग)\\s*[:\\-–—.]?\\s*(.*)", RegexOption.IGNORE_CASE)
+        // Matches: "Question 1", "Question 1:", "Q.1", "Q1.", "1.", "1 -", "प्रश्न 1:", "प्र. 1"
+        val qRegex = Regex("^(?:(?:Q(?:uestion)?|प्रश्न|प्र)\\s*[.:\\-–—]?\\s*(\\d+)[.:\\)\\-–—]?\\s*|(\\d+)[.:\\-–—]\\s*)(.*)", RegexOption.IGNORE_CASE)
+        val singleOptRegex = Regex("^(?:[({\\[](?:Option\\s*)?([A-Ea-eक-ङ1-5])[)\\]}]|([A-Ea-eक-ङ])\\s*[.:\\)\\]}–—-]\\s*|(?:Option\\s+([A-Ea-eक-ङ1-5])|([1-5])[)\\]}]))\\s*(.*)", RegexOption.IGNORE_CASE)
+        val multiOptPattern = Regex("[({\\[]?([A-Ea-eक-ङ1-5])[.:\\)\\]}–—-]\\s*([^(){\\[]+?)(?=[({\\[]?[A-Ea-eक-ङ1-5][.:\\)\\]}–—-]|$)", RegexOption.IGNORE_CASE)
+        val ansRegex = Regex("^(?:Right\\s*Option\\s*Id|Right\\s*Answer|Answer|Ans|उत्तर|Correct\\s*Option|Key)\\s*[:\\-–—.]?\\s*(?:Option\\s*)?[({\\[]?([A-Ea-eक-ङ1-5])[)\\]}]?", RegexOption.IGNORE_CASE)
+        val expRegex = Regex("^(?:Explanation|Solution|व्याख्या|हल)\\s*[:\\-–—.]?\\s*(.*)", RegexOption.IGNORE_CASE)
+        val secRegex = Regex("^(?:Section|Subject|General Knowledge|Computer Science|विषय|खंड|भाग)\\s*[:\\-–—.]?\\s*(.*)", RegexOption.IGNORE_CASE)
 
         fun mapToLetter(id: String): String {
             return when (id.uppercase()) {
@@ -481,8 +569,13 @@ object PdfQuestionExtractor {
         }
 
         for (line in lines) {
-            // Ignore standalone numeric lines (like option IDs 1001, 55001) or page markers
-            if (Regex("^\\d{3,8}$").matches(line) || Regex("^--- PAGE \\d+ ---$", RegexOption.IGNORE_CASE).matches(line)) {
+            // Ignore standalone numeric lines, URLs or page markers
+            if (Regex("^\\d{3,8}$").matches(line) ||
+                Regex("^--- PAGE \\d+ ---$", RegexOption.IGNORE_CASE).matches(line) ||
+                line.startsWith("http://", ignoreCase = true) ||
+                line.startsWith("https://", ignoreCase = true) ||
+                Regex("^Page-\\s*\\d+$", RegexOption.IGNORE_CASE).matches(line)
+            ) {
                 continue
             }
 
@@ -490,7 +583,9 @@ object PdfQuestionExtractor {
             val ansMatch = ansRegex.find(line)
             val expMatch = expRegex.find(line)
             val qMatch = qRegex.find(line)
-            val optMatch = optRegex.find(line)
+
+            // Check if line contains multiple side-by-side options e.g. "(A) बहन (B) साली"
+            val multiOptMatches = multiOptPattern.findAll(line).toList()
 
             when {
                 secMatch != null -> {
@@ -508,22 +603,32 @@ object PdfQuestionExtractor {
                 expMatch != null -> {
                     currentExp = expMatch.groupValues[1].trim()
                 }
-                optMatch != null -> {
-                    val rawId = optMatch.groupValues[1]
+                qMatch != null -> {
+                    flushCurrentQuestion()
+                    val textPart = qMatch.groupValues[3].trim()
+                    currentQText = if (textPart.isNotBlank()) textPart else line
+                }
+                multiOptMatches.size >= 2 -> {
+                    for (m in multiOptMatches) {
+                        val rawId = m.groupValues[1]
+                        val optId = mapToLetter(rawId)
+                        val optText = m.groupValues[2].trim()
+                        if (optText.isNotBlank()) {
+                            currentOptions.add(QuestionOption(optId, optText))
+                        }
+                    }
+                }
+                singleOptRegex.find(line) != null -> {
+                    val match = singleOptRegex.find(line)!!
+                    val rawId = match.groupValues[1].ifBlank { match.groupValues[2] }.ifBlank { match.groupValues[3] }.ifBlank { match.groupValues[4] }
                     val optId = mapToLetter(rawId)
-                    val optText = optMatch.groupValues[2].trim()
+                    val optText = match.groupValues[5].trim()
 
                     if (currentQText.isNotBlank()) {
                         currentOptions.add(QuestionOption(optId, optText))
                     } else {
                         currentQText += " $line"
                     }
-                }
-                qMatch != null && (line.startsWith("Q", ignoreCase = true) || line.startsWith("प्रश्न") || line.startsWith("प्र") || currentOptions.isNotEmpty() || currentQText.isBlank()) -> {
-                    flushCurrentQuestion()
-                    val num = qMatch.groupValues[1].ifBlank { qMatch.groupValues[2] }
-                    val textPart = qMatch.groupValues[3].trim()
-                    currentQText = if (textPart.isNotBlank()) textPart else line
                 }
                 else -> {
                     if (currentOptions.isNotEmpty()) {

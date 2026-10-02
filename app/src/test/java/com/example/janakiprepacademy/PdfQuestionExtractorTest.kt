@@ -97,4 +97,45 @@ class PdfQuestionExtractorTest {
             assertFalse("Question text should not be blank", q.text.isBlank())
         }
     }
+
+    @Test
+    fun testParseSideBySideHindiOptions() {
+        val sampleText = """
+            सामान्य ज्ञान एवं अन्य दक्षता
+            General Knowledge and Other Skills
+            
+            1. B का भाई है A, D का पिता है C, B की माता है E, A और D भाई हैं?
+            (A) बहन (B) साली
+            (C) भतीजी (D) पत्नी
+            Answer: C
+            
+            2. Which component is used for arithmetic operations in a computer?
+            (A) ALU (B) CU
+            (C) MU (D) BUS
+            Ans: A
+        """.trimIndent()
+
+        val parsed = PdfQuestionExtractor.parseQuestionsFromDocumentText(sampleText, "General Knowledge")
+        assertEquals(2, parsed.size)
+
+        val q1 = parsed[0]
+        assertEquals(4, q1.options.size)
+        assertEquals("A", q1.options[0].id)
+        assertEquals("बहन", q1.options[0].text)
+        assertEquals("B", q1.options[1].id)
+        assertEquals("साली", q1.options[1].text)
+        assertEquals("C", q1.options[2].id)
+        assertEquals("भतीजी", q1.options[2].text)
+        assertEquals("D", q1.options[3].id)
+        assertEquals("पत्नी", q1.options[3].text)
+        assertEquals("C", q1.correctOption)
+
+        val q2 = parsed[1]
+        assertEquals(4, q2.options.size)
+        assertEquals("ALU", q2.options[0].text)
+        assertEquals("CU", q2.options[1].text)
+        assertEquals("MU", q2.options[2].text)
+        assertEquals("BUS", q2.options[3].text)
+        assertEquals("A", q2.correctOption)
+    }
 }
