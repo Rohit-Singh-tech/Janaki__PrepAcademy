@@ -138,4 +138,90 @@ class PdfQuestionExtractorTest {
         assertEquals("BUS", q2.options[3].text)
         assertEquals("A", q2.correctOption)
     }
+
+    @Test
+    fun testParse2020ScannedBilingualExamBooklet() {
+        val sampleText = """
+            [ 307 ]
+            सामान्य ज्ञान एवं अन्य दक्षता
+            General Knowledge and Other Skills
+            ( Q.Nos. 1 to 50 )
+
+            1.  B का भाई है A, D का पिता है C, B की माता है E, A और D भाई हैं, तो E का C से क्या रिश्ता
+            है ?
+
+            (A)   बहन   (B)   साली
+            (C)   भतीजी   (D)   पत्नी
+
+            A is the brother of B, C is the father of D, E is the mother of B, A and D are
+            brothers. What is the relation of C with E?
+
+            (A)   Sister   (B)   Sister-in-law
+            (C)   Niece   (D)   Wife
+
+            2.
+            अशोक ने उत्तर दिशा की ओर चलना प्रारंभ किया। 30 मीटर चलने के बाद वह अपने बायीं तरफ
+            मुड़ा और 40 मीटर चला। पुनः वह बायीं तरफ मुड़ा और 30 मीटर चला। अब वह प्रारंभिक स्थान
+            से कितनी दूरी पर है ?
+
+            (A)   50 मीटर   (B)   40 मीटर
+            (C)   30 मीटर   (D)   20 मीटर
+
+            Ashok started to move in the direction of north. After moving 30m, he turned to
+            his left and moved 40 m. Again he turned to his left and moved 30m. Now how
+            far is he from the starting point ?
+
+            (A)   50 m   (B)   40 m
+            (C)   30 m   (D)   20 m
+
+            [ 74268 ] Set-B   RE-ST-608   2 / 48
+
+            ३.   किसी सांकेतिक भाषा में यदि CHAIR को 53269 लिखा जाए तो HEAR को क्या लिखेंगे?
+            (A)   3792   (B)   3729
+            (C)   3972   (D)   3929
+        """.trimIndent()
+
+        val parsed = PdfQuestionExtractor.parseQuestionsFromDocumentText(sampleText, "Default")
+        assertEquals(3, parsed.size)
+
+        // Verify Question 1
+        val q1 = parsed[0]
+        assertEquals("Other Skills", q1.sectionName)
+        assertTrue("Q1 text should contain Hindi question", q1.text.contains("B का भाई है A"))
+        assertTrue("Q1 text should contain English question", q1.text.contains("A is the brother of B"))
+        assertFalse("Q1 text should not contain noise header", q1.text.contains("307"))
+        assertFalse("Q1 text should not contain Q.Nos", q1.text.contains("Q.Nos"))
+        assertEquals(4, q1.options.size)
+        // Check options are sorted A, B, C, D
+        assertEquals("A", q1.options[0].id)
+        assertEquals("B", q1.options[1].id)
+        assertEquals("C", q1.options[2].id)
+        assertEquals("D", q1.options[3].id)
+        // Check merged bilingual options
+        assertEquals("बहन / Sister", q1.options[0].text)
+        assertEquals("साली / Sister-in-law", q1.options[1].text)
+        assertEquals("भतीजी / Niece", q1.options[2].text)
+        assertEquals("पत्नी / Wife", q1.options[3].text)
+
+        // Verify Question 2 (number 2 was alone on its own line)
+        val q2 = parsed[1]
+        assertFalse("Q2 text should NOT be just '2.'", q2.text.trim() == "2.")
+        assertTrue("Q2 text should contain Ashok question", q2.text.contains("अशोक ने उत्तर दिशा की ओर चलना प्रारंभ किया"))
+        assertTrue("Q2 text should contain English Ashok question", q2.text.contains("Ashok started to move in the direction of north"))
+        assertFalse("Q2 should not contain footer", q2.text.contains("74268"))
+        assertFalse("Q2 should not contain RE-ST-608", q2.text.contains("RE-ST-608"))
+        assertEquals(4, q2.options.size)
+        assertEquals("A", q2.options[0].id)
+        assertEquals("50 मीटर / 50 m", q2.options[0].text)
+        assertEquals("B", q2.options[1].id)
+        assertEquals("40 मीटर / 40 m", q2.options[1].text)
+
+        // Verify Question 3 (Devanagari numeral ३)
+        val q3 = parsed[2]
+        assertTrue("Q3 should be recognized from Devanagari 3", q3.text.contains("CHAIR"))
+        assertEquals(4, q3.options.size)
+        assertEquals("3792", q3.options[0].text)
+        assertEquals("3729", q3.options[1].text)
+    }
 }
+

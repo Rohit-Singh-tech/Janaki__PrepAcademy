@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import com.example.janakiprepacademy.data.model.Question
@@ -139,7 +140,8 @@ object PdfQuestionExtractor {
 
             for (i in 0 until pageCount) {
                 val page = renderer.openPage(i)
-                val scale = 1.5f
+                val targetWidth = 1400f
+                val scale = (targetWidth / page.width.toFloat()).coerceIn(1.4f, 2.2f)
                 val width = (page.width * scale).toInt().coerceAtLeast(1)
                 val height = (page.height * scale).toInt().coerceAtLeast(1)
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -156,7 +158,10 @@ object PdfQuestionExtractor {
                 }
 
                 sb.append("\n--- PAGE ${i + 1} ---\n")
-                sb.append(visionText.text)
+                val orderedLines = reconstructLinesInReadingOrder(visionText)
+                for (line in orderedLines) {
+                    sb.append(line).append("\n")
+                }
                 bitmap.recycle()
             }
 
@@ -176,8 +181,76 @@ object PdfQuestionExtractor {
     }
 
     /**
-     * Normalizes Unicode whitespaces (non-breaking spaces, zero-width chars)
-     * and quotation/dash variations to standard ASCII equivalents.
+     * Reconstructs text lines from Google ML Kit TextBlocks in true visual reading order.
+     * ML Kit often returns multi-column and side-by-side option blocks out of order.
+     * This function extracts every detected line with its bounding box, groups lines that share
+     * the same horizontal band into a visual row, sorts each row from left-to-right (preserving
+     * side-by-side options like "(A) बहन (B) साली"), and sorts rows from top-to-bottom.
+     */
+    private fun reconstructLinesInReadingOrder(visionText: com.google.mlkit.vision.text.Text): List<String> {
+        val rawLines = mutableListOf<Pair<Rect, String>>()
+        for (block in visionText.textBlocks) {
+            for (line in block.lines) {
+                val text = line.text.trim()
+                val box = line.boundingBox
+                if (text.isNotBlank() && box != null) {
+                    rawLines.add(Pair(box, text))
+                }
+            }
+        }
+
+        if (rawLines.isEmpty()) {
+            return visionText.text.lines().map { it.trim() }.filter { it.isNotBlank() }
+        }
+
+        // Sort initially by top Y coordinate
+        rawLines.sortBy { it.first.top }
+
+        // Group lines into visual horizontal rows
+        val rows = mutableListOf<MutableList<Pair<Rect, String>>>()
+
+        for (item in rawLines) {
+            val box = item.first
+            val itemCenterY = box.centerY()
+
+            var bestRow: MutableList<Pair<Rect, String>>? = null
+            var minDiff = Int.MAX_VALUE
+
+            for (row in rows) {
+                val rowAvgCenterY = row.map { it.first.centerY() }.average().toInt()
+                val rowAvgHeight = row.map { it.first.height() }.average().toInt().coerceAtLeast(12)
+                // Threshold: two lines belong to the same visual row if vertical center difference is <= 45% of row height
+                val threshold = (rowAvgHeight * 0.45).toInt().coerceIn(12, 35)
+
+                val diff = kotlin.math.abs(itemCenterY - rowAvgCenterY)
+                if (diff <= threshold && diff < minDiff) {
+                    minDiff = diff
+                    bestRow = row
+                }
+            }
+
+            if (bestRow != null) {
+                bestRow.add(item)
+            } else {
+                rows.add(mutableListOf(item))
+            }
+        }
+
+        // Sort rows strictly from top to bottom
+        rows.sortBy { row ->
+            row.map { it.first.centerY() }.average()
+        }
+
+        // Within each row, sort lines strictly from left to right and join with whitespace
+        return rows.map { row ->
+            row.sortBy { it.first.left }
+            row.joinToString("   ") { it.second }
+        }
+    }
+
+    /**
+     * Normalizes Unicode whitespaces (non-breaking spaces, zero-width chars),
+     * quotation/dash variations, and Devanagari numerals to standard ASCII equivalents.
      */
     fun normalizeText(text: String): String {
         return text
@@ -193,6 +266,16 @@ object PdfQuestionExtractor {
             .replace("\u2019", "'") // Right single quote
             .replace("\u201C", "\"") // Left double quote
             .replace("\u201D", "\"") // Right double quote
+            .replace('०', '0')
+            .replace('१', '1')
+            .replace('२', '2')
+            .replace('३', '3')
+            .replace('४', '4')
+            .replace('५', '5')
+            .replace('६', '6')
+            .replace('७', '7')
+            .replace('८', '8')
+            .replace('९', '9')
     }
 
     /**
@@ -496,7 +579,7 @@ object PdfQuestionExtractor {
 
     /**
      * Enhanced general parser for standard question papers and scanned papers.
-     * Supports side-by-side options (A) (B) on the same line, Hindi questions, etc.
+     * Supports side-by-side options (A) (B) on the same line, bilingual Hindi+English questions, etc.
      */
     private fun parseGeneralQuestions(text: String, defaultSection: String): List<Question> {
         val result = mutableListOf<Question>()
@@ -509,12 +592,15 @@ object PdfQuestionExtractor {
         var currentExp = ""
 
         // Matches: "Question 1", "Question 1:", "Q.1", "Q1.", "1.", "1 -", "प्रश्न 1:", "प्र. 1"
-        val qRegex = Regex("^(?:(?:Q(?:uestion)?|प्रश्न|प्र)\\s*[.:\\-–—]?\\s*(\\d+)[.:\\)\\-–—]?\\s*|(\\d+)[.:\\-–—]\\s*)(.*)", RegexOption.IGNORE_CASE)
+        val qRegex = Regex("^(?:(?:Q(?:uestion)?|प्रश्न|प्र)\\s*[.:\\-–—]?\\s*([0-9०-९]+)[.:\\)\\-–—]?\\s*|([0-9०-९]+)[.:\\)\\-–—]\\s*)(.*)", RegexOption.IGNORE_CASE)
         val singleOptRegex = Regex("^(?:[({\\[](?:Option\\s*)?([A-Ea-eक-ङ1-5])[)\\]}]|([A-Ea-eक-ङ])\\s*[.:\\)\\]}–—-]\\s*|(?:Option\\s+([A-Ea-eक-ङ1-5])|([1-5])[)\\]}]))\\s*(.*)", RegexOption.IGNORE_CASE)
-        val multiOptPattern = Regex("[({\\[]?([A-Ea-eक-ङ1-5])[.:\\)\\]}–—-]\\s*([^(){\\[]+?)(?=[({\\[]?[A-Ea-eक-ङ1-5][.:\\)\\]}–—-]|$)", RegexOption.IGNORE_CASE)
+        val multiOptPattern = Regex(
+            "(?:[({\\[]([A-Ea-eक-ङ1-5])[)\\]}]|(?:^|\\s{2,})([A-Ea-eक-ङ])[.:\\)\\]–—-]\\s*)\\s*([^(){\\[]+?)(?=(?:[({\\[][A-Ea-eक-ङ1-5][)\\]}]|\\s{2,}[A-Ea-eक-ङ][.:\\)\\]–—-]\\s*)|$)",
+            RegexOption.IGNORE_CASE
+        )
         val ansRegex = Regex("^(?:Right\\s*Option\\s*Id|Right\\s*Answer|Answer|Ans|उत्तर|Correct\\s*Option|Key)\\s*[:\\-–—.]?\\s*(?:Option\\s*)?[({\\[]?([A-Ea-eक-ङ1-5])[)\\]}]?", RegexOption.IGNORE_CASE)
         val expRegex = Regex("^(?:Explanation|Solution|व्याख्या|हल)\\s*[:\\-–—.]?\\s*(.*)", RegexOption.IGNORE_CASE)
-        val secRegex = Regex("^(?:Section|Subject|General Knowledge|Computer Science|विषय|खंड|भाग)\\s*[:\\-–—.]?\\s*(.*)", RegexOption.IGNORE_CASE)
+        val secRegex = Regex("^(?:Section|Subject|General Knowledge|Computer Science|Art of Teaching|Other Skills|सामान्य ज्ञान|शिक्षण कला|अन्य दक्षता|विषय|खंड|भाग)\\b.*", RegexOption.IGNORE_CASE)
 
         fun mapToLetter(id: String): String {
             return when (id.uppercase()) {
@@ -527,11 +613,29 @@ object PdfQuestionExtractor {
             }
         }
 
+        fun addOrMergeOption(rawId: String, text: String) {
+            val optText = text.trim()
+            if (optText.isBlank()) return
+            val optId = mapToLetter(rawId)
+            val existingIdx = currentOptions.indexOfFirst { it.id.equals(optId, ignoreCase = true) }
+            if (existingIdx != -1) {
+                val existing = currentOptions[existingIdx]
+                // If the new text is not already present, merge as "Hindi / English"
+                if (!existing.text.contains(optText, ignoreCase = true) && !optText.contains(existing.text, ignoreCase = true)) {
+                    currentOptions[existingIdx] = existing.copy(text = "${existing.text} / $optText")
+                }
+            } else {
+                currentOptions.add(QuestionOption(optId, optText))
+            }
+        }
+
         fun flushCurrentQuestion() {
             if (currentQText.isNotBlank() && currentOptions.isNotEmpty()) {
                 val dedupOptions = mutableListOf<QuestionOption>()
                 val seenIds = mutableSetOf<String>()
-                for (opt in currentOptions) {
+                val sortOrder = listOf("A", "B", "C", "D", "E")
+                val sortedList = currentOptions.sortedBy { sortOrder.indexOf(it.id.uppercase()).let { idx -> if (idx >= 0) idx else 99 } }
+                for (opt in sortedList) {
                     if (opt.id !in seenIds) {
                         seenIds.add(opt.id)
                         dedupOptions.add(opt)
@@ -569,8 +673,13 @@ object PdfQuestionExtractor {
         }
 
         for (line in lines) {
-            // Ignore standalone numeric lines, URLs or page markers
-            if (Regex("^\\d{3,8}$").matches(line) ||
+            // Ignore standalone numeric lines, URLs, page markers, booklet serials
+            if (Regex("^\\d{1,8}$").matches(line) ||
+                Regex("^\\[?\\s*\\d{1,6}\\s*\\]?$").matches(line) ||
+                Regex("^\\[?\\s*\\d+\\s*\\]?\\s*Set-[A-Za-z0-9]+.*$", RegexOption.IGNORE_CASE).matches(line) ||
+                Regex("^(?:RE-ST|STET|BSEB|SET|PAPER|CODE)[\\w\\s\\-–—]*$", RegexOption.IGNORE_CASE).matches(line) ||
+                Regex("^\\d+\\s*/\\s*\\d+$").matches(line) ||
+                Regex("^\\(?\\s*Q\\.?\\s*Nos?\\.?\\s*\\d+\\s*to\\s*\\d+\\s*\\)?$", RegexOption.IGNORE_CASE).matches(line) ||
                 Regex("^--- PAGE \\d+ ---$", RegexOption.IGNORE_CASE).matches(line) ||
                 line.startsWith("http://", ignoreCase = true) ||
                 line.startsWith("https://", ignoreCase = true) ||
@@ -584,14 +693,22 @@ object PdfQuestionExtractor {
             val expMatch = expRegex.find(line)
             val qMatch = qRegex.find(line)
 
-            // Check if line contains multiple side-by-side options e.g. "(A) बहन (B) साली"
+            // Check if line contains multiple side-by-side options e.g. "(A) बहन   (B) साली"
             val multiOptMatches = multiOptPattern.findAll(line).toList()
 
             when {
                 secMatch != null -> {
-                    val secName = secMatch.groupValues[1].trim()
-                    if (secName.isNotBlank()) {
-                        currentSection = secName
+                    val secTitle = line.trim()
+                    val cleanSec = when {
+                        secTitle.contains("Computer Science", ignoreCase = true) || secTitle.contains("कंप्यूटर", ignoreCase = true) -> "Computer Science"
+                        secTitle.contains("Art of Teaching", ignoreCase = true) || secTitle.contains("शिक्षण कला", ignoreCase = true) -> "Art of Teaching"
+                        secTitle.contains("Other Skills", ignoreCase = true) || secTitle.contains("अन्य दक्षता", ignoreCase = true) -> "Other Skills"
+                        secTitle.contains("General Knowledge", ignoreCase = true) || secTitle.contains("सामान्य ज्ञान", ignoreCase = true) -> "General Knowledge"
+                        else -> secTitle
+                    }
+                    currentSection = cleanSec
+                    if (currentOptions.isEmpty()) {
+                        currentQText = ""
                     }
                 }
                 ansMatch != null -> {
@@ -606,41 +723,41 @@ object PdfQuestionExtractor {
                 qMatch != null -> {
                     flushCurrentQuestion()
                     val textPart = qMatch.groupValues[3].trim()
-                    currentQText = if (textPart.isNotBlank()) textPart else line
+                    currentQText = textPart // can be empty if question number was alone on the line
                 }
                 multiOptMatches.size >= 2 -> {
                     for (m in multiOptMatches) {
-                        val rawId = m.groupValues[1]
-                        val optId = mapToLetter(rawId)
-                        val optText = m.groupValues[2].trim()
-                        if (optText.isNotBlank()) {
-                            currentOptions.add(QuestionOption(optId, optText))
+                        val rawId = m.groupValues[1].ifBlank { m.groupValues[2] }
+                        val optText = m.groupValues[3].trim()
+                        if (rawId.isNotBlank() && optText.isNotBlank()) {
+                            addOrMergeOption(rawId, optText)
                         }
                     }
                 }
                 singleOptRegex.find(line) != null -> {
                     val match = singleOptRegex.find(line)!!
                     val rawId = match.groupValues[1].ifBlank { match.groupValues[2] }.ifBlank { match.groupValues[3] }.ifBlank { match.groupValues[4] }
-                    val optId = mapToLetter(rawId)
                     val optText = match.groupValues[5].trim()
 
                     if (currentQText.isNotBlank()) {
-                        currentOptions.add(QuestionOption(optId, optText))
+                        addOrMergeOption(rawId, optText)
                     } else {
-                        currentQText += " $line"
+                        currentQText = line
                     }
                 }
                 else -> {
-                    if (currentOptions.isNotEmpty()) {
+                    if (currentOptions.size >= 4) {
                         if (currentExp.isNotBlank()) {
                             currentExp += " $line"
                         } else {
-                            val lastIdx = currentOptions.size - 1
-                            val lastOpt = currentOptions[lastIdx]
-                            currentOptions[lastIdx] = lastOpt.copy(text = "${lastOpt.text} $line")
+                            currentQText += "\n$line"
                         }
+                    } else if (currentOptions.isNotEmpty()) {
+                        val lastIdx = currentOptions.size - 1
+                        val lastOpt = currentOptions[lastIdx]
+                        currentOptions[lastIdx] = lastOpt.copy(text = "${lastOpt.text} $line")
                     } else if (currentQText.isNotBlank()) {
-                        currentQText += " $line"
+                        currentQText += "\n$line"
                     } else {
                         currentQText = line
                     }
