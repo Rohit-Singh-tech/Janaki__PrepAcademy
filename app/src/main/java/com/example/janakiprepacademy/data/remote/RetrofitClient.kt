@@ -12,8 +12,8 @@ import java.util.concurrent.TimeUnit
  * and the production Render Web Service URL (https://your-service.onrender.com/).
  */
 object RetrofitClient {
-    // Default development endpoint (10.0.2.2 is localhost on Android emulator)
-    private var baseUrl = "http://10.0.2.2:5000/"
+    // Live production endpoint on Render
+    private var baseUrl = "https://janaki-prepacademy.onrender.com/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
