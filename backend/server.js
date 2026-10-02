@@ -338,26 +338,49 @@ app.post('/api/auth/send-otp', (req, res) => {
 });
 
 // Verify OTP & Register User
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { name, email, password, otp } = req.body;
   const cleanEmail = (email || '').toLowerCase().trim();
 
+  // Allow if client already verified OTP (otp === 'VERIFIED') OR if otp matches OTP_STORE
   const record = OTP_STORE.get(cleanEmail);
-  if (!record || record.otp !== otp) {
-    return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+  if (otp !== 'VERIFIED') {
+    if (!record || record.otp !== otp) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+    OTP_STORE.delete(cleanEmail);
   }
-
-  OTP_STORE.delete(cleanEmail);
 
   const newUser = {
     id: `usr_${Date.now()}`,
-    name,
+    name: (name || 'Student').trim(),
     email: cleanEmail,
     password,
     isAdmin: false,
     district: "Sitamarhi"
   };
-  MOCK_USERS.push(newUser);
+
+  const existingIndex = MOCK_USERS.findIndex(u => u.email.toLowerCase() === cleanEmail);
+  if (existingIndex >= 0) {
+    MOCK_USERS[existingIndex] = newUser;
+  } else {
+    MOCK_USERS.push(newUser);
+  }
+
+  // Persist into PostgreSQL database
+  if (pool) {
+    try {
+      await pool.query(
+        `INSERT INTO users (id, name, email, password_hash, district)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (email) DO UPDATE SET name = $2, password_hash = $4`,
+        [newUser.id, newUser.name, cleanEmail, password, 'Sitamarhi']
+      );
+      console.log(`[DB] User ${cleanEmail} persisted to PostgreSQL successfully!`);
+    } catch (err) {
+      console.error(`[DB] Error persisting user ${cleanEmail}:`, err.message);
+    }
+  }
 
   res.json({
     success: true,
@@ -367,7 +390,7 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 // Login (Email or Name + Password)
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { identifier, password } = req.body;
   const cleanId = (identifier || '').trim();
 
@@ -380,11 +403,34 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  // Student check
-  const user = MOCK_USERS.find(
+  // 1. Check in-memory MOCK_USERS
+  let user = MOCK_USERS.find(
     u => (u.email.toLowerCase() === cleanId.toLowerCase() || u.name.toLowerCase() === cleanId.toLowerCase()) &&
       u.password === password
   );
+
+  // 2. Check PostgreSQL users table
+  if (!user && pool) {
+    try {
+      const dbRes = await pool.query(
+        `SELECT id, name, email, district, is_admin FROM users
+         WHERE (LOWER(email) = LOWER($1) OR LOWER(name) = LOWER($1))
+           AND password_hash = $2 LIMIT 1`,
+        [cleanId, password]
+      );
+      if (dbRes.rows.length > 0) {
+        const row = dbRes.rows[0];
+        user = {
+          name: row.name,
+          email: row.email,
+          district: row.district || 'Sitamarhi',
+          isAdmin: !!row.is_admin
+        };
+      }
+    } catch (e) {
+      console.error('[DB] Login query error:', e.message);
+    }
+  }
 
   if (user) {
     return res.json({
