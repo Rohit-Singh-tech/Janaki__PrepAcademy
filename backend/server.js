@@ -130,6 +130,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ━━━ Force IPv4 to prevent ENETUNREACH on cloud containers (Render) ━━━
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 // ━━━ Gmail SMTP Transporter for Real OTP Delivery ━━━
 const nodemailer = require('nodemailer');
 const emailUser = (process.env.GMAIL_USER || process.env.EMAIL_USER || 'singhrohitkumar602@gmail.com').trim();
@@ -141,6 +147,7 @@ const emailTransporter = (emailUser && emailPass)
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      family: 4, // CRITICAL: Force IPv4 for Render outbound SMTP
       auth: {
         user: emailUser,
         pass: emailPass
@@ -148,9 +155,9 @@ const emailTransporter = (emailUser && emailPass)
       tls: {
         rejectUnauthorized: false
       },
-      connectionTimeout: 6000,
-      greetingTimeout: 6000,
-      socketTimeout: 8000
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000
     })
   : null;
 
