@@ -132,17 +132,26 @@ app.get('/api/health', (req, res) => {
 
 // ━━━ Gmail SMTP Transporter for Real OTP Delivery ━━━
 const nodemailer = require('nodemailer');
-const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER || 'singhrohitkumar602@gmail.com';
-const emailPass = process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS;
+const emailUser = (process.env.GMAIL_USER || process.env.EMAIL_USER || 'singhrohitkumar602@gmail.com').trim();
+const rawEmailPass = process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS || '';
+const emailPass = rawEmailPass.replace(/\s+/g, '').trim();
 
 const emailTransporter = (emailUser && emailPass)
   ? nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: emailUser,
-      pass: emailPass
-    }
-  })
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: emailUser,
+        pass: emailPass
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 6000,
+      greetingTimeout: 6000,
+      socketTimeout: 8000
+    })
   : null;
 
 if (emailTransporter) {
@@ -153,8 +162,8 @@ if (emailTransporter) {
 
 // ━━━ AUTHENTICATION ENDPOINTS ━━━
 
-// Send Gmail OTP
-app.post('/api/auth/send-otp', async (req, res) => {
+// Send Gmail OTP (Non-blocking async dispatch)
+app.post('/api/auth/send-otp', (req, res) => {
   const { email } = req.body;
   if (!email || !email.includes('@')) {
     return res.status(400).json({ success: false, message: 'Valid email required' });
@@ -165,51 +174,54 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
   console.log(`[AUTH] Generated 6-digit OTP for ${cleanEmail}: ${otp}`);
 
-  let emailSent = false;
-  let errorDetail = null;
-
-  if (emailTransporter) {
-    try {
-      await emailTransporter.sendMail({
-        from: `"Janaki PrepAcademy" <${emailUser}>`,
-        to: cleanEmail,
-        subject: `${otp} is your Janaki PrepAcademy verification code`,
-        text: `Your Janaki PrepAcademy verification code is: ${otp}\nValid for 10 minutes.\n\nJanaki PrepAcademy • Sitamarhi, Bihar`,
-        html: `
-          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #FFE0B2; border-radius: 16px; background-color: #FFFFFF;">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <h1 style="color: #FF5722; margin: 0; font-size: 26px; font-weight: 800;">Janaki PrepAcademy</h1>
-              <p style="color: #FF8F00; font-size: 13px; font-weight: 600; margin: 4px 0 0 0;">सीतामढ़ी की धरती से • सफलता की ओर</p>
-            </div>
-            <div style="background-color: #FFF8E1; border-left: 4px solid #FF9800; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
-              <p style="margin: 0; color: #5D4037; font-size: 14px; font-weight: 600;">Gmail Verification Code</p>
-            </div>
-            <p style="color: #333333; font-size: 15px; line-height: 1.5;">नमस्ते,</p>
-            <p style="color: #555555; font-size: 14px; line-height: 1.6;">Thank you for registering on <strong>Janaki PrepAcademy</strong> (Bihar STET, BPSC Teacher TRE & CCE CBT platform). Use this 6-digit code to verify your account:</p>
-            <div style="background: linear-gradient(135deg, #FFF3E0, #FFE0B2); border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; border: 1px dashed #FF9800;">
-              <span style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #D84315;">${otp}</span>
-            </div>
-            <p style="color: #777777; font-size: 13px; line-height: 1.5;">⏰ This code is valid for <strong>10 minutes</strong>. Never share your OTP with anyone.</p>
-            <hr style="border: none; border-top: 1px solid #EEEEEE; margin: 24px 0;" />
-            <p style="color: #9E9E9E; font-size: 11px; text-align: center; margin: 0;">Janaki PrepAcademy • Sitamarhi, Bihar</p>
-          </div>
-        `
-      });
-      emailSent = true;
-      console.log(`[AUTH] ✅ Real email successfully delivered to ${cleanEmail}`);
-    } catch (err) {
-      errorDetail = err.message;
-      console.error(`[AUTH] ❌ Failed to dispatch email via SMTP:`, err.message);
-    }
-  }
-
+  // Send immediate HTTP response so the mobile app doesn't hang
   res.json({
     success: true,
-    message: emailSent ? `Verification code sent to ${cleanEmail}` : `OTP code generated for ${cleanEmail}`,
-    emailSent: emailSent,
-    otp: otp,
-    error: errorDetail
+    message: `Verification code generated for ${cleanEmail}`,
+    emailConfigured: !!emailTransporter,
+    otp: otp
   });
+
+  // Asynchronously dispatch email in background via Gmail SMTP
+  if (emailTransporter) {
+    emailTransporter.sendMail({
+      from: `"Janaki PrepAcademy" <${emailUser}>`,
+      to: cleanEmail,
+      subject: `${otp} is your Janaki PrepAcademy verification code`,
+      text: `Your Janaki PrepAcademy verification code is: ${otp}\nValid for 10 minutes.\n\nJanaki PrepAcademy • Sitamarhi, Bihar`,
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #FFE0B2; border-radius: 16px; background-color: #FFFFFF;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #FF5722; margin: 0; font-size: 26px; font-weight: 800;">Janaki PrepAcademy</h1>
+            <p style="color: #FF8F00; font-size: 13px; font-weight: 600; margin: 4px 0 0 0;">सीतामढ़ी की धरती से • सफलता की ओर</p>
+          </div>
+          <div style="background-color: #FFF8E1; border-left: 4px solid #FF9800; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
+            <p style="margin: 0; color: #5D4037; font-size: 14px; font-weight: 600;">Gmail Verification Code</p>
+          </div>
+          <p style="color: #333333; font-size: 15px; line-height: 1.5;">नमस्ते,</p>
+          <p style="color: #555555; font-size: 14px; line-height: 1.6;">Thank you for registering on <strong>Janaki PrepAcademy</strong> (Bihar STET, BPSC Teacher TRE & CCE CBT platform). Use this 6-digit code to verify your account:</p>
+          <div style="background: linear-gradient(135deg, #FFF3E0, #FFE0B2); border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; border: 1px dashed #FF9800;">
+            <span style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #D84315;">${otp}</span>
+          </div>
+          <p style="color: #777777; font-size: 13px; line-height: 1.5;">⏰ This code is valid for <strong>10 minutes</strong>. Never share your OTP with anyone.</p>
+          <hr style="border: none; border-top: 1px solid #EEEEEE; margin: 24px 0;" />
+          <p style="color: #9E9E9E; font-size: 11px; text-align: center; margin: 0;">Janaki PrepAcademy • Sitamarhi, Bihar</p>
+        </div>
+      `
+    }).then(info => {
+      console.log(`[AUTH] ✅ Real email successfully delivered to ${cleanEmail}! (ID: ${info.messageId})`);
+    }).catch(err => {
+      console.error(`[AUTH] ❌ Gmail SMTP Delivery Error:`, err.message);
+      if (err.message.includes('535') || err.message.includes('BadCredentials') || err.message.includes('Username and Password not accepted')) {
+        console.error(`[AUTH] ⚠️ ACTION REQUIRED: Google rejected your App Password. Make sure:`);
+        console.error(`[AUTH] 1. 2-Step Verification is ON in Google Account.`);
+        console.error(`[AUTH] 2. Generate a 16-letter App Password at: https://myaccount.google.com/apppasswords`);
+        console.error(`[AUTH] 3. Set GMAIL_APP_PASSWORD on Render dashboard.`);
+      }
+    });
+  } else {
+    console.log(`[AUTH] ⚠️ Email not dispatched: GMAIL_APP_PASSWORD is not set on Render. OTP for ${cleanEmail} is: ${otp}`);
+  }
 });
 
 // Verify OTP & Register User
