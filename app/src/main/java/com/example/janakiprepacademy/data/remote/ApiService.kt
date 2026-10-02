@@ -12,7 +12,13 @@ data class HealthResponse(
 )
 
 data class SendOtpRequest(val email: String)
-data class SendOtpResponse(val success: Boolean, val message: String, val testOtp: String?)
+data class SendOtpResponse(
+    val success: Boolean,
+    val message: String,
+    val otp: String? = null,
+    val emailSent: Boolean? = null,
+    val testOtp: String? = null
+)
 
 data class RegisterRequest(val name: String, val email: String, val password: String, val otp: String)
 data class RegisterResponse(val success: Boolean, val message: String, val user: UserPayload?)

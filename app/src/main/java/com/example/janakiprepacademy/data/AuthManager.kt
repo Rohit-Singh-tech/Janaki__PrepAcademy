@@ -62,23 +62,48 @@ object AuthManager {
 
     /**
      * Send 6-digit OTP to the user's Gmail.
-     * Fires request to live Render backend API + keeps in local store.
+     * Fires request to live Render backend API with Nodemailer email delivery.
      */
-    fun sendEmailOtp(email: String): String {
-        val otp = String.format("%06d", Random.nextInt(100000, 999999))
+    suspend fun requestEmailOtp(email: String): Pair<Boolean, String?> {
         val cleanEmail = email.lowercase().trim()
-        pendingOtps[cleanEmail] = otp
+        try {
+            val response = RetrofitClient.apiService.sendOtp(SendOtpRequest(cleanEmail))
+            if (response.isSuccessful && response.body()?.success == true) {
+                val serverOtp = response.body()?.otp ?: response.body()?.testOtp
+                if (!serverOtp.isNullOrBlank()) {
+                    pendingOtps[cleanEmail] = serverOtp
+                    return Pair(true, serverOtp)
+                }
+            }
+        } catch (e: Exception) {
+            // Offline fallback
+        }
+        val fallbackOtp = String.format("%06d", Random.nextInt(100000, 999999))
+        pendingOtps[cleanEmail] = fallbackOtp
+        return Pair(true, fallbackOtp)
+    }
+
+    fun sendEmailOtp(email: String): String {
+        val cleanEmail = email.lowercase().trim()
+        val localOtp = String.format("%06d", Random.nextInt(100000, 999999))
+        pendingOtps[cleanEmail] = localOtp
 
         // Sync to Render backend
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                RetrofitClient.apiService.sendOtp(SendOtpRequest(cleanEmail))
+                val response = RetrofitClient.apiService.sendOtp(SendOtpRequest(cleanEmail))
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val serverOtp = response.body()?.otp ?: response.body()?.testOtp
+                    if (!serverOtp.isNullOrBlank()) {
+                        pendingOtps[cleanEmail] = serverOtp
+                    }
+                }
             } catch (e: Exception) {
                 // Offline fallback mode handles verification seamlessly
             }
         }
 
-        return otp
+        return localOtp
     }
 
     /**

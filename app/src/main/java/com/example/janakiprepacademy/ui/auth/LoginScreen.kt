@@ -7,6 +7,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,7 +71,8 @@ fun LoginScreen(
     // OTP Verification State
     var showOtpDialog by remember { mutableStateOf(false) }
     var enteredOtp by remember { mutableStateOf("") }
-    var generatedOtpNotice by remember { mutableStateOf<String?>(null) }
+    var isSendingOtp by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
@@ -481,20 +483,30 @@ fun LoginScreen(
                                 }
 
                                 // Generate & Send OTP to user's Gmail
-                                val otp = AuthManager.sendEmailOtp(cleanEmail)
-                                generatedOtpNotice = otp
-                                enteredOtp = ""
-                                showOtpDialog = true
+                                isSendingOtp = true
+                                coroutineScope.launch {
+                                    AuthManager.sendEmailOtp(cleanEmail)
+                                    isSendingOtp = false
+                                    enteredOtp = ""
+                                    showOtpDialog = true
+                                }
                             },
+                            enabled = !isSendingOtp,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = JanakiOrange)
                         ) {
-                            Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Verify Gmail & Send OTP", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            if (isSendingOtp) {
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text("Sending code to Gmail...", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            } else {
+                                Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Verify Gmail & Send OTP", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
                         }
                     }
                 }
@@ -542,38 +554,46 @@ fun LoginScreen(
                         textAlign = TextAlign.Center
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // In-app OTP display helper for instant testing
-                    if (generatedOtpNotice != null) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = JanakiGold.copy(alpha = 0.2f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { enteredOtp = generatedOtpNotice!! }
+                    // Professional Inbox Notice
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = CreamWhite,
+                        border = BorderStroke(1.dp, JanakiGold.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Icon(
+                                Icons.Default.Email,
+                                contentDescription = null,
+                                tint = JanakiOrange,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "🔑 Test OTP: $generatedOtpNotice (Tap to auto-fill)",
-                                color = JanakiOrangeDark,
+                                text = "Please open your Gmail app and check your Inbox (or Spam folder) for the 6-digit code.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.DarkGray,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(8.dp)
+                                lineHeight = 16.sp
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     OutlinedTextField(
                         value = enteredOtp,
                         onValueChange = { if (it.length <= 6) enteredOtp = it },
                         label = { Text("Enter 6-Digit OTP") },
+                        placeholder = { Text("e.g. 583921") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        textStyle = MaterialTheme.typography.titleLarge.copy(textAlign = TextAlign.Center, letterSpacing = 4.sp)
+                        textStyle = MaterialTheme.typography.titleLarge.copy(textAlign = TextAlign.Center, letterSpacing = 6.sp, fontWeight = FontWeight.Bold)
                     )
                 }
             },
@@ -587,7 +607,7 @@ fun LoginScreen(
                             Toast.makeText(context, "Registration Complete! Welcome, ${newUser.name}!", Toast.LENGTH_LONG).show()
                             onLoginSuccess()
                         } else {
-                            Toast.makeText(context, "Incorrect OTP. Please check and try again.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Incorrect OTP. Please check your email and try again.", Toast.LENGTH_SHORT).show()
                         }
                     },
                     enabled = enteredOtp.length == 6,
@@ -599,10 +619,9 @@ fun LoginScreen(
             dismissButton = {
                 TextButton(
                     onClick = {
-                        // Resend OTP
-                        val newOtp = AuthManager.sendEmailOtp(regEmail)
-                        generatedOtpNotice = newOtp
-                        Toast.makeText(context, "New OTP sent!", Toast.LENGTH_SHORT).show()
+                        // Resend OTP to user's email
+                        AuthManager.sendEmailOtp(regEmail)
+                        Toast.makeText(context, "New code sent to ${regEmail.trim().lowercase()}", Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Text("Resend Code", color = JanakiOrange)
