@@ -348,32 +348,6 @@ fun LoginScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Text("Continue with Gmail", fontWeight = FontWeight.Bold, color = JanakiOrangeDark, fontSize = 15.sp)
                         }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Quick Admin hint chip
-                        Surface(
-                            onClick = {
-                                loginIdentifier = "rohit"
-                                loginPassword = "Rohit1234@#"
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = CreamWhite,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.VpnKey, contentDescription = null, tint = JanakiGold, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    "Tap to fill Admin login (rohit / Rohit1234@#)",
-                                    fontSize = 11.sp,
-                                    color = Color.DarkGray
-                                )
-                            }
-                        }
                     }
 
                     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

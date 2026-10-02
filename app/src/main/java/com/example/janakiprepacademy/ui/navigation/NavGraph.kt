@@ -47,7 +47,12 @@ fun JanakiNavGraph(
         composable(Screen.Login.route) {
             LoginScreen(
                 onLoginSuccess = {
-                    navController.navigate(Screen.Onboarding.route) {
+                    val targetRoute = if (AuthManager.hasCompletedOnboarding) {
+                        Screen.Dashboard.route
+                    } else {
+                        Screen.Onboarding.route
+                    }
+                    navController.navigate(targetRoute) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
                 },

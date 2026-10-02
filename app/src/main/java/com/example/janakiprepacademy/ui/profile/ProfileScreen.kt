@@ -54,6 +54,12 @@ fun ProfileScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            val currentUser = com.example.janakiprepacademy.data.AuthManager.currentUser
+            val displayName = currentUser?.name?.ifBlank { "Student" } ?: "Student"
+            val displayEmail = currentUser?.email?.ifBlank { "student@gmail.com" } ?: "student@gmail.com"
+            val displayDistrict = currentUser?.district?.ifBlank { "Sitamarhi" } ?: "Sitamarhi"
+            val displayTrack = currentUser?.selectedTrack?.displayName ?: "Bihar STET (Paper II)"
+
             // ━━━ Profile Header Card ━━━
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -82,23 +88,26 @@ fun ProfileScreen(
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.2f))
                         ) {
-                            Text("👤", fontSize = 40.sp)
+                            Text(
+                                if (currentUser?.isAdmin == true) "👑" else "👤",
+                                fontSize = 40.sp
+                            )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            "Student",
+                            displayName,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                         Text(
-                            "student@gmail.com",
+                            displayEmail,
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White.copy(alpha = 0.8f)
                         )
                         Text(
-                            "📍 Sitamarhi, Bihar",
+                            "📍 $displayDistrict, Bihar",
                             style = MaterialTheme.typography.bodySmall,
                             color = JanakiGold,
                             fontWeight = FontWeight.Medium
@@ -149,14 +158,14 @@ fun ProfileScreen(
                     SettingsItem(
                         icon = Icons.Filled.School,
                         title = "Exam Track",
-                        subtitle = "Bihar STET (Paper II)",
+                        subtitle = displayTrack,
                         onClick = { }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SettingsItem(
                         icon = Icons.Filled.LocationOn,
                         title = "District",
-                        subtitle = "Sitamarhi",
+                        subtitle = displayDistrict,
                         onClick = { }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

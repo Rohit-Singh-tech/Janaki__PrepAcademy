@@ -36,6 +36,9 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
 
+        // Initialize persistent authentication and user session
+        com.example.janakiprepacademy.data.AuthManager.init(this)
+
         setContent {
             JanakiPrepAcademyTheme {
                 val navController = rememberNavController()
@@ -46,8 +49,8 @@ class MainActivity : ComponentActivity() {
                 ) {
                     JanakiNavGraph(
                         navController = navController,
-                        isLoggedIn = false,   // Will be managed by DataStore/Firebase Auth state
-                        isOnboarded = false   // Will be managed by DataStore preferences
+                        isLoggedIn = com.example.janakiprepacademy.data.AuthManager.isLoggedIn,
+                        isOnboarded = com.example.janakiprepacademy.data.AuthManager.hasCompletedOnboarding
                     )
                 }
             }
