@@ -162,9 +162,29 @@ if (emailTransporter) {
   console.log(`⚠️ Gmail SMTP not configured yet. Set GMAIL_USER and GMAIL_APP_PASSWORD on Render to send real emails.`);
 }
 
-// ━━━ RESILIENT EMAIL DISPATCHER (Resend HTTPS API + Gmail SMTP) ━━━
+// ━━━ RESILIENT EMAIL DISPATCHER (100% Free Google Apps Script + Resend + Brevo) ━━━
 async function dispatchEmail(to, subject, html, text) {
-  // Option 1: Resend HTTP API (Port 443 HTTPS - 100% firewall-proof on Render)
+  // Option 1: 100% Free Google Apps Script Webhook (Sends from your Gmail to ANY recipient over HTTPS)
+  if (process.env.GOOGLE_SCRIPT_URL) {
+    try {
+      const res = await fetch(process.env.GOOGLE_SCRIPT_URL.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: to,
+          subject: subject,
+          html: html,
+          text: text
+        })
+      });
+      console.log(`[AUTH] ✅ Email dispatched via 100% Free Google Apps Script to ${to}`);
+      return { success: true, provider: 'google_script' };
+    } catch (err) {
+      console.error(`[AUTH] Google Script error:`, err.message);
+    }
+  }
+
+  // Option 2: Resend HTTP API (Port 443 HTTPS - 100% firewall-proof on Render)
   if (process.env.RESEND_API_KEY) {
     try {
       const res = await fetch('https://api.resend.com/emails', {
