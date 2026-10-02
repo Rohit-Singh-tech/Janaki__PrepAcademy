@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Janaki PrepAcademy</string>
+    <string name="app_tagline">सीतामढ़ी की धरती से • सफलता की ओर</string>
+    <string name="exam_stet">Bihar STET</string>
+    <string name="exam_bpsc_teacher">BPSC Teacher</string>
+    <string name="exam_bpsc_cce">BPSC Civil Services</string>
+    <string name="exam_upsc">UPSC Civil Services</string>
+</resources>
