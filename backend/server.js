@@ -132,7 +132,7 @@ app.get('/api/health', (req, res) => {
 
 // ━━━ Gmail SMTP Transporter for Real OTP Delivery ━━━
 const nodemailer = require('nodemailer');
-const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER;
+const emailUser = process.env.GMAIL_USER || process.env.EMAIL_USER || 'rohitkumar602@gmail.com';
 const emailPass = process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS;
 
 const emailTransporter = (emailUser && emailPass)
