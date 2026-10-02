@@ -203,6 +203,35 @@ async function dispatchEmail(to, subject, html, text) {
     }
   }
 
+  // Option 2: Brevo (Sendinblue) HTTP API (Port 443 HTTPS)
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': process.env.BREVO_API_KEY.trim(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: 'Janaki PrepAcademy', email: emailUser },
+          to: [{ email: to }],
+          subject: subject,
+          htmlContent: html,
+          textContent: text
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        console.log(`[AUTH] ✅ Email sent via Brevo HTTPS API to ${to}: ${data.messageId}`);
+        return { success: true, provider: 'brevo', id: data.messageId };
+      } else {
+        console.error(`[AUTH] Brevo error:`, data);
+      }
+    } catch (err) {
+      console.error(`[AUTH] Brevo HTTP Error:`, err.message);
+    }
+  }
+
   // Option 2: Gmail SMTP Transporter (Ports 587 / 465)
   if (emailTransporter) {
     try {
