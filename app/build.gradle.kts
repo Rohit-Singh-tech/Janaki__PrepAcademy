@@ -79,6 +79,9 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.play.services.auth)
 
+    // PDF Text Extraction (100% Free / Open Source Apache 2.0)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

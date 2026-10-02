@@ -28,15 +28,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.janakiprepacademy.data.AuthManager
 import com.example.janakiprepacademy.data.SampleDataProvider
+import com.example.janakiprepacademy.data.PdfQuestionExtractor
 import com.example.janakiprepacademy.data.model.*
 import com.example.janakiprepacademy.ui.theme.*
 import java.util.UUID
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+
+enum class AdminTargetMode(val title: String, val description: String) {
+    ADD_TO_EXISTING("Add to Existing Exam", "Select an active test and add new questions to it"),
+    CREATE_NEW("Create New Exam", "Build a brand new mock test from scratch")
+}
 
 /**
  * Admin Panel Screen — Protected Portal for Admin (username: rohit)
  * Allows Admin to upload question & answer papers via PDF / text,
- * customize exam parameters, preview questions, and publish
- * new test papers instantly for students to take in the CBT player.
+ * select a particular exam or create a new one, preview questions, and
+ * publish or append questions instantly for students to take in CBT player.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,22 +55,51 @@ fun AdminPanelScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Mode: Add to Existing Exam vs Create New
+    var targetMode by remember { mutableStateOf(AdminTargetMode.ADD_TO_EXISTING) }
+
+    // List of available exams
+    var availableExams by remember { mutableStateOf(SampleDataProvider.getAvailableExams()) }
+    var selectedExamId by remember {
+        mutableStateOf(availableExams.firstOrNull()?.examId ?: "stet_cs_mock_01")
+    }
+    var examDropdownExpanded by remember { mutableStateOf(false) }
+
+    val selectedExistingExam = availableExams.find { it.examId == selectedExamId }
 
     // Exam Metadata State
-    var selectedTrack by remember { mutableStateOf(ExamTrack.BIHAR_STET) }
-    var testTitle by remember { mutableStateOf("Bihar STET CS - Mock Test 3 (Paper II)") }
-    var durationMinutes by remember { mutableStateOf("150") }
-    var correctMarks by remember { mutableStateOf("1.0") }
-    var negativeMarks by remember { mutableStateOf("0.0") }
-    var isFiveOptions by remember { mutableStateOf(false) }
+    var selectedTrack by remember { mutableStateOf(selectedExistingExam?.category ?: ExamTrack.BIHAR_STET) }
+    var testTitle by remember { mutableStateOf(selectedExistingExam?.title ?: "Bihar STET CS - Mock Test 1") }
+    var durationMinutes by remember { mutableStateOf(selectedExistingExam?.totalDurationMinutes?.toString() ?: "150") }
+    var correctMarks by remember { mutableStateOf(selectedExistingExam?.correctMarks?.toString() ?: "1.0") }
+    var negativeMarks by remember { mutableStateOf(selectedExistingExam?.negativeMarks?.toString() ?: "0.0") }
+    var isFiveOptions by remember { mutableStateOf(selectedExistingExam?.optionsPerQuestion == 5) }
+
+    // Synchronize metadata when selected existing exam changes
+    LaunchedEffect(selectedExamId, targetMode) {
+        if (targetMode == AdminTargetMode.ADD_TO_EXISTING) {
+            selectedExistingExam?.let { exam ->
+                selectedTrack = exam.category
+                testTitle = exam.title
+                durationMinutes = exam.totalDurationMinutes.toString()
+                correctMarks = exam.correctMarks.toString()
+                negativeMarks = exam.negativeMarks.toString()
+                isFiveOptions = exam.optionsPerQuestion == 5
+            }
+        }
+    }
 
     // PDF / File Selection State
     var selectedPdfUri by remember { mutableStateOf<Uri?>(null) }
     var pdfFileName by remember { mutableStateOf<String?>(null) }
+    var isExtractingPdf by remember { mutableStateOf(false) }
     var showPasteDialog by remember { mutableStateOf(false) }
     var pastedText by remember { mutableStateOf("") }
     var showPublishSuccessDialog by remember { mutableStateOf(false) }
     var publishedExamId by remember { mutableStateOf("") }
+    var publishSuccessMessage by remember { mutableStateOf("") }
 
     // Questions List State
     val questions = remember {
@@ -70,19 +108,50 @@ fun AdminPanelScreen(
         }
     }
 
-    // PDF Picker Launcher
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+    // Real PDF & Document Picker Launcher
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             selectedPdfUri = uri
-            pdfFileName = uri.lastPathSegment ?: "exam_questions.pdf"
-            Toast.makeText(context, "PDF Selected: $pdfFileName", Toast.LENGTH_SHORT).show()
-            // Auto parse & add extracted questions from the uploaded paper
-            val extracted = parseQuestionsFromDocumentText(samplePdfExtractedText)
-            questions.clear()
-            questions.addAll(extracted)
-            Toast.makeText(context, "Extracted ${extracted.size} questions from PDF!", Toast.LENGTH_LONG).show()
+            pdfFileName = uri.lastPathSegment ?: "document.pdf"
+            isExtractingPdf = true
+
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val extractResult = PdfQuestionExtractor.extractTextFromUri(context, uri)
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    isExtractingPdf = false
+                    extractResult.onSuccess { extractedText ->
+                        val sectionName = selectedExistingExam?.sections?.firstOrNull()?.name ?: "Comprehensive Paper"
+                        val parsed = PdfQuestionExtractor.parseQuestionsFromDocumentText(extractedText, sectionName)
+
+                        if (parsed.isNotEmpty()) {
+                            questions.clear()
+                            questions.addAll(parsed)
+                            Toast.makeText(
+                                context,
+                                "✅ Successfully extracted ${parsed.size} questions from PDF!",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Text extracted from PDF! Review or edit in paste dialog.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            pastedText = extractedText
+                            showPasteDialog = true
+                        }
+                    }.onFailure { err ->
+                        Toast.makeText(
+                            context,
+                            err.message ?: "Failed to read PDF",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
         }
     }
 
@@ -113,7 +182,7 @@ fun AdminPanelScreen(
                             }
                         }
                         Text(
-                            "Create, Upload & Publish Mock Tests",
+                            "Add Questions to Exam • Real PDF Parsing",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray
                         )
@@ -136,7 +205,7 @@ fun AdminPanelScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .navigationBarsPadding() // FIX: Never collapse under phone 3-button navigation bar!
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -172,15 +241,15 @@ fun AdminPanelScreen(
                             color = JanakiGold
                         )
                         Text(
-                            "Upload question papers with answer keys in PDF or text format. The app will build CBT mock tests automatically.",
+                            "Upload real PDF question papers, select a particular exam to append questions, or create new tests for students.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.8f)
+                            color = Color.White.copy(alpha = 0.85f)
                         )
                     }
                 }
             }
 
-            // ━━━ SECTION 1: EXAM DETAILS CONFIGURATION ━━━
+            // ━━━ SECTION 1: TARGET EXAM SELECTOR & MODE ━━━
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -189,85 +258,261 @@ fun AdminPanelScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "1. Exam Configuration",
+                        "1. Select Target Exam",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = JanakiOrangeDark
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Exam Track Selector
-                    Text("Select Exam Track", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    // Mode Selection Tabs
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        ExamTrack.entries.forEach { track ->
-                            val isSelected = selectedTrack == track
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    selectedTrack = track
-                                    isFiveOptions = track == ExamTrack.BPSC_TEACHER || track == ExamTrack.BPSC_CCE
-                                    negativeMarks = if (track.hasNegativeMarking) track.negativeMarkFraction.toString() else "0.0"
-                                    durationMinutes = track.durationMinutes.toString()
-                                },
-                                label = { Text(track.shortName, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = JanakiOrange,
-                                    selectedLabelColor = Color.White
-                                )
-                            )
+                        AdminTargetMode.entries.forEach { mode ->
+                            val isSelected = targetMode == mode
+                            Surface(
+                                onClick = { targetMode = mode },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) JanakiOrange else CreamWhite,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) JanakiOrange else Color.LightGray.copy(alpha = 0.5f)
+                                ),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        mode.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (isSelected) Color.White else DarkNavy,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        if (mode == AdminTargetMode.ADD_TO_EXISTING) "Append to test" else "New paper",
+                                        fontSize = 11.sp,
+                                        color = if (isSelected) Color.White.copy(alpha = 0.9f) else Color.Gray,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Title
-                    OutlinedTextField(
-                        value = testTitle,
-                        onValueChange = { testTitle = it },
-                        label = { Text("Mock Test Title") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
+                    if (targetMode == AdminTargetMode.ADD_TO_EXISTING) {
+                        // ─── CHOOSE FROM EXISTING EXAMS ───
+                        Text(
+                            "Choose Existing Exam to Add Questions To:",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = DarkNavy
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        // Dropdown Anchor Box
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedCard(
+                                onClick = { examDropdownExpanded = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.outlinedCardColors(containerColor = CreamWhite)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            selectedExistingExam?.title ?: "Select an exam",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = DarkNavy
+                                        )
+                                        Text(
+                                            "${selectedExistingExam?.category?.displayName} • ${selectedExistingExam?.sections?.sumOf { it.questions.size } ?: 0} Current Questions",
+                                            fontSize = 12.sp,
+                                            color = JanakiOrangeDark
+                                        )
+                                    }
+                                    Icon(
+                                        if (examDropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        tint = JanakiOrange
+                                    )
+                                }
+                            }
 
-                    // Duration & Marks Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+                            DropdownMenu(
+                                expanded = examDropdownExpanded,
+                                onDismissRequest = { examDropdownExpanded = false },
+                                modifier = Modifier
+                                    .fillMaxWidth(0.9f)
+                                    .background(PureWhite)
+                            ) {
+                                availableExams.forEach { exam ->
+                                    val isCurrent = exam.examId == selectedExamId
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        exam.title,
+                                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (isCurrent) JanakiOrangeDark else DarkNavy
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = JanakiGold.copy(alpha = 0.2f)
+                                                    ) {
+                                                        Text(
+                                                            exam.category.shortName,
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = JanakiMaroon,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Text(
+                                                    "Current Questions: ${exam.sections.sumOf { it.questions.size }} • ${exam.totalDurationMinutes} mins",
+                                                    fontSize = 11.sp,
+                                                    color = Color.Gray
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            selectedExamId = exam.examId
+                                            examDropdownExpanded = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                if (isCurrent) Icons.Default.CheckCircle else Icons.Default.Quiz,
+                                                contentDescription = null,
+                                                tint = if (isCurrent) CorrectGreen else Color.Gray,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Summary of question counts
+                        val currentQCount = selectedExistingExam?.sections?.sumOf { it.questions.size } ?: 0
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = JanakiOrangeLight.copy(alpha = 0.15f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Current", fontSize = 11.sp, color = Color.Gray)
+                                    Text("$currentQCount Qs", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = JanakiOrange)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("New to Append", fontSize = 11.sp, color = Color.Gray)
+                                    Text("${questions.size} Qs", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = JanakiOrangeDark)
+                                }
+                                Text("=", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = JanakiOrange)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Total After Save", fontSize = 11.sp, color = Color.Gray)
+                                    Text("${currentQCount + questions.size} Qs", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CorrectGreen)
+                                }
+                            }
+                        }
+                    } else {
+                        // ─── CREATE NEW EXAM MODE ───
+                        Text("Select Exam Track", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ExamTrack.entries.forEach { track ->
+                                val isSelected = selectedTrack == track
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        selectedTrack = track
+                                        isFiveOptions = track == ExamTrack.BPSC_TEACHER || track == ExamTrack.BPSC_CCE
+                                        negativeMarks = if (track.hasNegativeMarking) track.negativeMarkFraction.toString() else "0.0"
+                                        durationMinutes = track.durationMinutes.toString()
+                                    },
+                                    label = { Text(track.shortName, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = JanakiOrange,
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Title
                         OutlinedTextField(
-                            value = durationMinutes,
-                            onValueChange = { durationMinutes = it },
-                            label = { Text("Duration (min)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f),
+                            value = testTitle,
+                            onValueChange = { testTitle = it },
+                            label = { Text("Mock Test Title") },
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             singleLine = true
                         )
-                        OutlinedTextField(
-                            value = correctMarks,
-                            onValueChange = { correctMarks = it },
-                            label = { Text("Marks/Q") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = negativeMarks,
-                            onValueChange = { negativeMarks = it },
-                            label = { Text("Negative") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true
-                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Duration & Marks Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = durationMinutes,
+                                onValueChange = { durationMinutes = it },
+                                label = { Text("Duration (min)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = correctMarks,
+                                onValueChange = { correctMarks = it },
+                                label = { Text("Marks/Q") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = negativeMarks,
+                                onValueChange = { negativeMarks = it },
+                                label = { Text("Negative") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+                        }
                     }
                 }
             }
@@ -286,29 +531,62 @@ fun AdminPanelScreen(
                         fontWeight = FontWeight.Bold,
                         color = JanakiOrangeDark
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Upload a PDF with questions and answer key, or paste text to parse questions automatically.",
+                        "Select any PDF or TXT file on your phone. Questions, options (A-D/E) and answer keys will be extracted automatically.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // PDF Pick Button
-                    Button(
-                        onClick = { pdfPickerLauncher.launch("application/pdf") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = JanakiMaroon)
-                    ) {
-                        Icon(Icons.Default.PictureAsPdf, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            pdfFileName ?: "Upload Question Paper (PDF)",
-                            fontWeight = FontWeight.Bold
-                        )
+                    if (isExtractingPdf) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = JanakiOrangeLight.copy(alpha = 0.15f))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = JanakiOrange,
+                                    strokeWidth = 2.5.dp
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    "Extracting & parsing questions from PDF...",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = JanakiOrangeDark
+                                )
+                            }
+                        }
+                    } else {
+                        // PDF Pick Button
+                        Button(
+                            onClick = {
+                                documentPickerLauncher.launch(
+                                    arrayOf("application/pdf", "text/plain", "*/*")
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = JanakiMaroon)
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                if (pdfFileName != null) "📄 $pdfFileName (Tap to re-upload)" else "Upload Question Paper (PDF / .TXT)",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -340,7 +618,7 @@ fun AdminPanelScreen(
                         ) {
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp), tint = JanakiGold)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Auto Load 10 Qs", fontSize = 12.sp)
+                            Text("Load 5 Template Qs", fontSize = 12.sp)
                         }
                     }
                 }
@@ -407,49 +685,81 @@ fun AdminPanelScreen(
                 }
             }
 
-            // ━━━ SECTION 4: PUBLISH ACTION BAR ━━━
-            Button(
-                onClick = {
-                    if (questions.isEmpty()) {
-                        Toast.makeText(context, "Please add at least 1 question before publishing", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    val examId = "custom_exam_${UUID.randomUUID().toString().take(8)}"
-                    val newExam = Exam(
-                        examId = examId,
-                        title = testTitle.ifBlank { "${selectedTrack.displayName} Mock Test" },
-                        category = selectedTrack,
-                        totalDurationMinutes = durationMinutes.toIntOrNull() ?: selectedTrack.durationMinutes,
-                        correctMarks = correctMarks.toDoubleOrNull() ?: 1.0,
-                        negativeMarks = negativeMarks.toDoubleOrNull() ?: 0.0,
-                        optionsPerQuestion = if (isFiveOptions) 5 else 4,
-                        sections = listOf(
-                            ExamSection(
-                                sectionId = "sec_main",
-                                name = "Comprehensive Paper",
-                                questions = questions.toList()
-                            )
-                        ),
-                        isFree = true,
-                        totalAttempts = 0
+            // ━━━ SECTION 4: PUBLISH / SAVE ACTION BAR ━━━
+            if (targetMode == AdminTargetMode.ADD_TO_EXISTING) {
+                Button(
+                    onClick = {
+                        if (questions.isEmpty()) {
+                            Toast.makeText(context, "Please add or extract at least 1 question", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val updated = SampleDataProvider.appendQuestionsToExam(selectedExamId, questions.toList(), context)
+                        availableExams = SampleDataProvider.getAvailableExams()
+                        publishedExamId = selectedExamId
+                        val totalCount = updated?.sections?.sumOf { it.questions.size } ?: questions.size
+                        publishSuccessMessage = "Successfully appended ${questions.size} questions to '${selectedExistingExam?.title}'!\n\nThis exam now has $totalCount total questions and is ready for students in the CBT player."
+                        showPublishSuccessDialog = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = JanakiMaroon)
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "💾 Append ${questions.size} Qs to ${selectedExistingExam?.category?.shortName ?: "Exam"}: ${selectedExistingExam?.title?.take(20) ?: ""}...",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                    SampleDataProvider.addCustomExam(newExam)
-                    publishedExamId = examId
-                    showPublishSuccessDialog = true
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = JanakiOrange)
-            ) {
-                Icon(Icons.Default.Publish, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "🚀 Publish Test Paper (${questions.size} Questions)",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                }
+            } else {
+                Button(
+                    onClick = {
+                        if (questions.isEmpty()) {
+                            Toast.makeText(context, "Please add at least 1 question before publishing", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val examId = "custom_exam_${UUID.randomUUID().toString().take(8)}"
+                        val newExam = Exam(
+                            examId = examId,
+                            title = testTitle.ifBlank { "${selectedTrack.displayName} Mock Test" },
+                            category = selectedTrack,
+                            totalDurationMinutes = durationMinutes.toIntOrNull() ?: selectedTrack.durationMinutes,
+                            correctMarks = correctMarks.toDoubleOrNull() ?: 1.0,
+                            negativeMarks = negativeMarks.toDoubleOrNull() ?: 0.0,
+                            optionsPerQuestion = if (isFiveOptions) 5 else 4,
+                            sections = listOf(
+                                ExamSection(
+                                    sectionId = "sec_main",
+                                    name = "Comprehensive Paper",
+                                    questions = questions.toList()
+                                )
+                            ),
+                            isFree = true,
+                            totalAttempts = 0
+                        )
+                        SampleDataProvider.addCustomExam(newExam, context)
+                        availableExams = SampleDataProvider.getAvailableExams()
+                        publishedExamId = examId
+                        publishSuccessMessage = "'$testTitle' with ${questions.size} questions has been published! Students can now take this CBT exam in the app."
+                        showPublishSuccessDialog = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = JanakiOrange)
+                ) {
+                    Icon(Icons.Default.Publish, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "🚀 Publish New Test Paper (${questions.size} Questions)",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -464,7 +774,7 @@ fun AdminPanelScreen(
             text = {
                 Column {
                     Text(
-                        "Format: Question text followed by A., B., C., D. and Answer: [A/B/C/D]",
+                        "Format: Question text followed by A., B., C., D. (or E.) and Answer: [A/B/C/D/E]",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
@@ -482,7 +792,10 @@ fun AdminPanelScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val parsed = parseQuestionsFromDocumentText(pastedText)
+                        val parsed = PdfQuestionExtractor.parseQuestionsFromDocumentText(
+                            pastedText,
+                            defaultSection = selectedExistingExam?.sections?.firstOrNull()?.name ?: "Main Section"
+                        )
                         if (parsed.isNotEmpty()) {
                             questions.clear()
                             questions.addAll(parsed)
@@ -516,14 +829,14 @@ fun AdminPanelScreen(
             },
             title = {
                 Text(
-                    "Test Paper Published!",
+                    if (targetMode == AdminTargetMode.ADD_TO_EXISTING) "Questions Appended Successfully!" else "Test Paper Published!",
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
             },
             text = {
                 Text(
-                    "'$testTitle' with ${questions.size} questions has been published! Students can now take this CBT exam in the app.",
+                    publishSuccessMessage,
                     textAlign = TextAlign.Center
                 )
             },
@@ -664,70 +977,9 @@ private fun QuestionEditCard(
  * Intelligent parser that extracts questions, options, and answer keys
  * from plain text or extracted PDF documents.
  */
-fun parseQuestionsFromDocumentText(text: String): List<Question> {
-    val result = mutableListOf<Question>()
-    val lines = text.split("\n").map { it.trim() }.filter { it.isNotBlank() }
-
-    var currentQText = ""
-    var currentOptions = mutableListOf<QuestionOption>()
-    var currentAns = "A"
-    var currentExp = ""
-
-    for (line in lines) {
-        when {
-            line.matches(Regex("^(Q\\s*\\d+|\\d+)[.:\\-)].*", RegexOption.IGNORE_CASE)) -> {
-                if (currentQText.isNotBlank() && currentOptions.isNotEmpty()) {
-                    result.add(
-                        Question(
-                            questionId = "parsed_q_${UUID.randomUUID().toString().take(6)}",
-                            sectionName = "Computer Science",
-                            text = currentQText,
-                            options = currentOptions.toList(),
-                            correctOption = currentAns,
-                            explanation = currentExp.ifBlank { "Solution for this question." }
-                        )
-                    )
-                    currentOptions = mutableListOf()
-                    currentExp = ""
-                }
-                currentQText = line.replaceFirst(Regex("^(Q\\s*\\d+|\\d+)[.:\\-)]\\s*", RegexOption.IGNORE_CASE), "")
-            }
-            line.matches(Regex("^[A-Ea-e][.:\\-)].*")) -> {
-                val optId = line.substring(0, 1).uppercase()
-                val optText = line.substring(2).trim()
-                currentOptions.add(QuestionOption(optId, optText))
-            }
-            line.contains("Answer:", ignoreCase = true) || line.contains("Ans:", ignoreCase = true) -> {
-                val ansLetter = line.replace(Regex(".*(Answer|Ans):?\\s*", RegexOption.IGNORE_CASE), "").trim().take(1).uppercase()
-                if (ansLetter in listOf("A", "B", "C", "D", "E")) {
-                    currentAns = ansLetter
-                }
-            }
-            line.contains("Explanation:", ignoreCase = true) -> {
-                currentExp = line.replace(Regex(".*Explanation:\\s*", RegexOption.IGNORE_CASE), "").trim()
-            }
-            else -> {
-                if (currentOptions.isEmpty()) {
-                    currentQText += " $line"
-                }
-            }
-        }
-    }
-
-    if (currentQText.isNotBlank() && currentOptions.isNotEmpty()) {
-        result.add(
-            Question(
-                questionId = "parsed_q_${UUID.randomUUID().toString().take(6)}",
-                sectionName = "Computer Science",
-                text = currentQText,
-                options = currentOptions.toList(),
-                correctOption = currentAns,
-                explanation = currentExp.ifBlank { "Correct option is $currentAns" }
-            )
-        )
-    }
-
-    return result.ifEmpty { generateDefaultAdminQuestions() }
+fun parseQuestionsFromDocumentText(text: String, sectionName: String = "Uploaded Section"): List<Question> {
+    val parsed = PdfQuestionExtractor.parseQuestionsFromDocumentText(text, sectionName)
+    return parsed.ifEmpty { generateDefaultAdminQuestions() }
 }
 
 /**

@@ -473,6 +473,31 @@ app.post('/api/admin/exams', (req, res) => {
   });
 });
 
+// ━━━ ADMIN APPEND QUESTIONS TO EXISTING EXAM ━━━
+app.post('/api/admin/exams/:id/questions', (req, res) => {
+  const { questions } = req.body;
+  const examId = req.params.id;
+  const exam = MOCK_EXAMS.find(e => e.id === examId || e.exam_code === examId);
+
+  if (!exam) {
+    return res.status(404).json({ success: false, message: 'Exam not found' });
+  }
+
+  if (!exam.questions) exam.questions = [];
+  const addedCount = Array.isArray(questions) ? questions.length : 0;
+  if (Array.isArray(questions)) {
+    exam.questions.push(...questions);
+    exam.total_questions = exam.questions.length;
+  }
+
+  res.json({
+    success: true,
+    message: `Successfully appended ${addedCount} questions to ${exam.title}!`,
+    examId: exam.id,
+    totalQuestions: exam.total_questions
+  });
+});
+
 // ━━━ EXAMS & CBT APIS ━━━
 app.get('/api/exams', (req, res) => {
   const { track } = req.query;

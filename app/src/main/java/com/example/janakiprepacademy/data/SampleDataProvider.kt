@@ -294,15 +294,66 @@ object SampleDataProvider {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // Available Mock Tests (Built-in + Admin Created)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    private const val PREFS_NAME = "janaki_custom_exams_prefs"
+    private const val KEY_CUSTOM_EXAMS = "custom_exams_json"
+
     private val customExams = mutableListOf<Exam>()
 
-    fun addCustomExam(exam: Exam) {
-        customExams.removeAll { it.examId == exam.examId }
-        customExams.add(0, exam)
+    fun init(context: android.content.Context) {
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            val json = prefs.getString(KEY_CUSTOM_EXAMS, null)
+            if (!json.isNullOrBlank()) {
+                val type = object : com.google.gson.reflect.TypeToken<List<Exam>>() {}.type
+                val saved: List<Exam> = com.google.gson.Gson().fromJson(json, type)
+                customExams.clear()
+                customExams.addAll(saved)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
-    fun getAvailableExams(): List<Exam> = customExams + listOf(
-        Exam(
+    private fun persistExams(context: android.content.Context?) {
+        if (context == null) return
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            val json = com.google.gson.Gson().toJson(customExams)
+            prefs.edit().putString(KEY_CUSTOM_EXAMS, json).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun addCustomExam(exam: Exam, context: android.content.Context? = null) {
+        customExams.removeAll { it.examId == exam.examId }
+        customExams.add(0, exam)
+        persistExams(context)
+    }
+
+    fun appendQuestionsToExam(examId: String, newQuestions: List<Question>, context: android.content.Context? = null): Exam? {
+        val target = getAvailableExams().find { it.examId == examId } ?: return null
+        val updatedSections = if (target.sections.isNotEmpty()) {
+            val first = target.sections.first()
+            listOf(first.copy(questions = first.questions + newQuestions)) + target.sections.drop(1)
+        } else {
+            listOf(ExamSection("sec_main", "Uploaded Questions", newQuestions))
+        }
+        val updated = target.copy(sections = updatedSections)
+        customExams.removeAll { it.examId == examId }
+        customExams.add(0, updated)
+        persistExams(context)
+        return updated
+    }
+
+    fun getAvailableExams(): List<Exam> {
+        val customIds = customExams.map { it.examId }.toSet()
+        return customExams + builtInExams.filter { it.examId !in customIds }
+    }
+
+    private val builtInExams: List<Exam> by lazy {
+        listOf(
+            Exam(
             examId = "stet_cs_mock_01",
             title = "Bihar STET CS - Mock Test 1",
             category = ExamTrack.BIHAR_STET,
@@ -408,7 +459,7 @@ object SampleDataProvider {
             isFree = true,
             totalAttempts = 8945
         )
-    )
+    ) }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // Sample Leaderboard Data

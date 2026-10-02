@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
 
         // Initialize persistent authentication and user session
         com.example.janakiprepacademy.data.AuthManager.init(this)
+        com.example.janakiprepacademy.data.SampleDataProvider.init(this)
 
         setContent {
             JanakiPrepAcademyTheme {

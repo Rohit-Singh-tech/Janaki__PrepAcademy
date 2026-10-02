@@ -27,6 +27,7 @@ val CreamWhite = Color(0xFFFFF8E1)
 val WarmGray = Color(0xFFF5F5F5)
 val PureWhite = Color(0xFFFFFFFF)
 val DarkSurface = Color(0xFF1A1A2E)
+val DarkNavy = Color(0xFF1A1A2E)
 val DarkBackground = Color(0xFF0F0F23)
 val DarkCard = Color(0xFF16213E)
 
