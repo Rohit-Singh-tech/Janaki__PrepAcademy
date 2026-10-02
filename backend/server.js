@@ -187,9 +187,11 @@ async function dispatchEmail(to, subject, html, text) {
         return { success: true, provider: 'resend', id: data.id };
       } else {
         console.error(`[AUTH] Resend error:`, data);
+        return { success: false, provider: 'resend', error: data.message || JSON.stringify(data) };
       }
     } catch (err) {
       console.error(`[AUTH] Resend HTTP Error:`, err.message);
+      return { success: false, provider: 'resend', error: err.message };
     }
   }
 
