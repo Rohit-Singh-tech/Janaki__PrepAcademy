@@ -145,9 +145,9 @@ const emailPass = rawEmailPass.replace(/\s+/g, '').trim();
 const emailTransporter = (emailUser && emailPass)
   ? nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      family: 4, // CRITICAL: Force IPv4 for Render outbound SMTP
+      port: 587,
+      secure: false, // STARTTLS on port 587
+      family: 4,
       auth: {
         user: emailUser,
         pass: emailPass
@@ -155,9 +155,9 @@ const emailTransporter = (emailUser && emailPass)
       tls: {
         rejectUnauthorized: false
       },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000
+      connectionTimeout: 6000,
+      greetingTimeout: 6000,
+      socketTimeout: 8000
     })
   : null;
 
@@ -167,6 +167,58 @@ if (emailTransporter) {
   console.log(`⚠️ Gmail SMTP not configured yet. Set GMAIL_USER and GMAIL_APP_PASSWORD on Render to send real emails.`);
 }
 
+// ━━━ RESILIENT EMAIL DISPATCHER (Resend HTTPS API + Gmail SMTP) ━━━
+async function dispatchEmail(to, subject, html, text) {
+  // Option 1: Resend HTTP API (Port 443 HTTPS - 100% firewall-proof on Render)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: process.env.EMAIL_FROM || 'Janaki PrepAcademy <onboarding@resend.dev>',
+          to: [to],
+          subject: subject,
+          html: html,
+          text: text
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        console.log(`[AUTH] ✅ Email sent via Resend HTTPS API to ${to}: ${data.id}`);
+        return { success: true, provider: 'resend', id: data.id };
+      } else {
+        console.error(`[AUTH] Resend error:`, data);
+      }
+    } catch (err) {
+      console.error(`[AUTH] Resend HTTP Error:`, err.message);
+    }
+  }
+
+  // Option 2: Gmail SMTP Transporter (Ports 587 / 465)
+  if (emailTransporter) {
+    try {
+      const info = await emailTransporter.sendMail({
+        from: `"Janaki PrepAcademy" <${emailUser}>`,
+        to: to,
+        subject: subject,
+        html: html,
+        text: text
+      });
+      console.log(`[AUTH] ✅ Email sent via SMTP to ${to}: ${info.messageId}`);
+      return { success: true, provider: 'smtp', id: info.messageId };
+    } catch (err) {
+      console.error(`[AUTH] ❌ Gmail SMTP Delivery Error:`, err.message);
+      return { success: false, provider: 'smtp', error: err.message };
+    }
+  }
+
+  return { success: false, error: 'No active email provider configured (set RESEND_API_KEY or GMAIL_APP_PASSWORD)' };
+}
+
 // ━━━ DIAGNOSTIC ENDPOINT ━━━
 app.get('/api/debug/mail-test', async (req, res) => {
   const targetEmail = req.query.to || emailUser || 'rohitranjan9798490472@gmail.com';
@@ -174,50 +226,22 @@ app.get('/api/debug/mail-test', async (req, res) => {
     configuredUser: emailUser,
     hasPassword: !!emailPass,
     passwordLength: emailPass ? emailPass.length : 0,
+    hasResendApiKey: !!process.env.RESEND_API_KEY,
     hasTransporter: !!emailTransporter
   };
 
-  if (!emailTransporter) {
-    return res.json({
-      status: 'NOT_CONFIGURED',
-      diagnostics,
-      message: 'emailTransporter is null. Make sure GMAIL_APP_PASSWORD is set in Render environment variables.'
-    });
-  }
+  const testSubject = `Test OTP from Janaki PrepAcademy`;
+  const testHtml = `<h3>Janaki PrepAcademy</h3><p>Your OTP email service is working properly!</p>`;
+  const testText = `Janaki PrepAcademy OTP service is working!`;
 
-  try {
-    console.log(`[DEBUG] Verifying SMTP connection for ${emailUser}...`);
-    await emailTransporter.verify();
-    diagnostics.smtpConnected = true;
+  const result = await dispatchEmail(targetEmail, testSubject, testHtml, testText);
+  diagnostics.result = result;
 
-    console.log(`[DEBUG] Sending test email to ${targetEmail}...`);
-    const info = await emailTransporter.sendMail({
-      from: `"Janaki PrepAcademy" <${emailUser}>`,
-      to: targetEmail,
-      subject: `Test OTP from Janaki PrepAcademy`,
-      text: `Hello! This is a test email confirming your Janaki PrepAcademy OTP service is working!`,
-      html: `<h3>Janaki PrepAcademy</h3><p>Your OTP email delivery is working perfectly!</p>`
-    });
-
-    diagnostics.messageId = info.messageId;
-    diagnostics.response = info.response;
-
-    return res.json({
-      status: 'SUCCESS',
-      diagnostics,
-      message: `Test email successfully sent to ${targetEmail}`
-    });
-  } catch (err) {
-    diagnostics.smtpConnected = false;
-    diagnostics.error = err.message;
-    diagnostics.code = err.code;
-    diagnostics.command = err.command;
-    return res.json({
-      status: 'FAILED',
-      diagnostics,
-      message: err.message
-    });
-  }
+  return res.json({
+    status: result.success ? 'SUCCESS' : 'FAILED',
+    diagnostics,
+    message: result.success ? `Test email dispatched to ${targetEmail} via ${result.provider}` : result.error
+  });
 });
 
 // ━━━ AUTHENTICATION ENDPOINTS ━━━
@@ -242,46 +266,29 @@ app.post('/api/auth/send-otp', (req, res) => {
     otp: otp
   });
 
-  // Asynchronously dispatch email in background via Gmail SMTP
-  if (emailTransporter) {
-    emailTransporter.sendMail({
-      from: `"Janaki PrepAcademy" <${emailUser}>`,
-      to: cleanEmail,
-      subject: `${otp} is your Janaki PrepAcademy verification code`,
-      text: `Your Janaki PrepAcademy verification code is: ${otp}\nValid for 10 minutes.\n\nJanaki PrepAcademy • Sitamarhi, Bihar`,
-      html: `
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #FFE0B2; border-radius: 16px; background-color: #FFFFFF;">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <h1 style="color: #FF5722; margin: 0; font-size: 26px; font-weight: 800;">Janaki PrepAcademy</h1>
-            <p style="color: #FF8F00; font-size: 13px; font-weight: 600; margin: 4px 0 0 0;">सीतामढ़ी की धरती से • सफलता की ओर</p>
-          </div>
-          <div style="background-color: #FFF8E1; border-left: 4px solid #FF9800; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
-            <p style="margin: 0; color: #5D4037; font-size: 14px; font-weight: 600;">Gmail Verification Code</p>
-          </div>
-          <p style="color: #333333; font-size: 15px; line-height: 1.5;">नमस्ते,</p>
-          <p style="color: #555555; font-size: 14px; line-height: 1.6;">Thank you for registering on <strong>Janaki PrepAcademy</strong> (Bihar STET, BPSC Teacher TRE & CCE CBT platform). Use this 6-digit code to verify your account:</p>
-          <div style="background: linear-gradient(135deg, #FFF3E0, #FFE0B2); border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; border: 1px dashed #FF9800;">
-            <span style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #D84315;">${otp}</span>
-          </div>
-          <p style="color: #777777; font-size: 13px; line-height: 1.5;">⏰ This code is valid for <strong>10 minutes</strong>. Never share your OTP with anyone.</p>
-          <hr style="border: none; border-top: 1px solid #EEEEEE; margin: 24px 0;" />
-          <p style="color: #9E9E9E; font-size: 11px; text-align: center; margin: 0;">Janaki PrepAcademy • Sitamarhi, Bihar</p>
-        </div>
-      `
-    }).then(info => {
-      console.log(`[AUTH] ✅ Real email successfully delivered to ${cleanEmail}! (ID: ${info.messageId})`);
-    }).catch(err => {
-      console.error(`[AUTH] ❌ Gmail SMTP Delivery Error:`, err.message);
-      if (err.message.includes('535') || err.message.includes('BadCredentials') || err.message.includes('Username and Password not accepted')) {
-        console.error(`[AUTH] ⚠️ ACTION REQUIRED: Google rejected your App Password. Make sure:`);
-        console.error(`[AUTH] 1. 2-Step Verification is ON in Google Account.`);
-        console.error(`[AUTH] 2. Generate a 16-letter App Password at: https://myaccount.google.com/apppasswords`);
-        console.error(`[AUTH] 3. Set GMAIL_APP_PASSWORD on Render dashboard.`);
-      }
-    });
-  } else {
-    console.log(`[AUTH] ⚠️ Email not dispatched: GMAIL_APP_PASSWORD is not set on Render. OTP for ${cleanEmail} is: ${otp}`);
-  }
+  // Asynchronously dispatch email in background
+  const emailHtml = `
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #FFE0B2; border-radius: 16px; background-color: #FFFFFF;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #FF5722; margin: 0; font-size: 26px; font-weight: 800;">Janaki PrepAcademy</h1>
+        <p style="color: #FF8F00; font-size: 13px; font-weight: 600; margin: 4px 0 0 0;">सीतामढ़ी की धरती से • सफलता की ओर</p>
+      </div>
+      <div style="background-color: #FFF8E1; border-left: 4px solid #FF9800; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
+        <p style="margin: 0; color: #5D4037; font-size: 14px; font-weight: 600;">Gmail Verification Code</p>
+      </div>
+      <p style="color: #333333; font-size: 15px; line-height: 1.5;">नमस्ते,</p>
+      <p style="color: #555555; font-size: 14px; line-height: 1.6;">Thank you for registering on <strong>Janaki PrepAcademy</strong> (Bihar STET, BPSC Teacher TRE & CCE CBT platform). Use this 6-digit code to verify your account:</p>
+      <div style="background: linear-gradient(135deg, #FFF3E0, #FFE0B2); border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; border: 1px dashed #FF9800;">
+        <span style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #D84315;">${otp}</span>
+      </div>
+      <p style="color: #777777; font-size: 13px; line-height: 1.5;">⏰ This code is valid for <strong>10 minutes</strong>. Never share your OTP with anyone.</p>
+      <hr style="border: none; border-top: 1px solid #EEEEEE; margin: 24px 0;" />
+      <p style="color: #9E9E9E; font-size: 11px; text-align: center; margin: 0;">Janaki PrepAcademy • Sitamarhi, Bihar</p>
+    </div>
+  `;
+  const emailText = `Your Janaki PrepAcademy verification code is: ${otp}\nValid for 10 minutes.\n\nJanaki PrepAcademy • Sitamarhi, Bihar`;
+
+  dispatchEmail(cleanEmail, `${otp} is your Janaki PrepAcademy verification code`, emailHtml, emailText);
 });
 
 // Verify OTP & Register User
