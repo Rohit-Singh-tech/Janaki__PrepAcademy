@@ -136,6 +136,10 @@ if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
 }
 
+function forceIPv4Lookup(hostname, options, callback) {
+  return dns.lookup(hostname, { family: 4, all: false }, callback);
+}
+
 // ━━━ Gmail SMTP Transporter for Real OTP Delivery ━━━
 const nodemailer = require('nodemailer');
 const emailUser = (process.env.GMAIL_USER || process.env.EMAIL_USER || 'singhrohitkumar602@gmail.com').trim();
@@ -146,18 +150,19 @@ const emailTransporter = (emailUser && emailPass)
   ? nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,
-      secure: false, // STARTTLS on port 587
-      family: 4,
+      secure: false,
+      lookup: forceIPv4Lookup, // GUANRANTEES IPv4
       auth: {
         user: emailUser,
         pass: emailPass
       },
       tls: {
+        servername: 'smtp.gmail.com',
         rejectUnauthorized: false
       },
-      connectionTimeout: 6000,
-      greetingTimeout: 6000,
-      socketTimeout: 8000
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000
     })
   : null;
 
