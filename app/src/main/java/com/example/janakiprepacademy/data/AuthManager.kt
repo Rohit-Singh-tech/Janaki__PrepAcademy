@@ -256,24 +256,41 @@ object AuthManager {
     }
 
     /**
+     * Checks if an identifier belongs to Admin Rohit
+     */
+    fun isAdminIdentifier(id: String): Boolean {
+        val clean = id.lowercase().trim()
+        return clean == "rohit" ||
+                clean == "admin" ||
+                clean == "admin@janakiprep.com" ||
+                clean == "rohitranjan9798490472@gmail.com" ||
+                clean == "singhrohitkumar602@gmail.com" ||
+                clean == "rohit@gmail.com"
+    }
+
+    /**
      * Log in user using Name or Email and Password.
-     * Checks for Admin credentials: username=rohit, password=Rohit1234@#
-     * Checks all locally persisted accounts and backend API.
+     * Checks for Admin credentials (rohit / admin / emails with Rohit1234@#).
      */
     fun login(identifier: String, password: String): AuthResult {
         val cleanId = identifier.trim()
+        val cleanPassword = password.trim()
 
-        // 1. Check Admin Credentials
-        if (cleanId.equals("rohit", ignoreCase = true) && password == "Rohit1234@#") {
+        // 1. Check Admin Credentials (Flexible recognition for Admin Rohit)
+        val isAdminPass = cleanPassword == "Rohit1234@#"
+        val isAdminUser = isAdminIdentifier(cleanId)
+
+        if (isAdminPass && isAdminUser) {
             val adminUser = UserAccount(
                 name = "Rohit (Admin)",
-                email = "admin@janakiprep.com",
-                password = password,
+                email = if (cleanId.contains("@")) cleanId else "admin@janakiprep.com",
+                password = cleanPassword,
                 isAdmin = true,
                 selectedTrack = ExamTrack.BIHAR_STET,
                 district = "Sitamarhi"
             )
             currentUser = adminUser
+            hasCompletedOnboarding = true
             saveSession()
             return AuthResult.Admin
         }
@@ -281,13 +298,17 @@ object AuthManager {
         // 2. Check Standard User by Email or Name in persistent local accounts
         val user = accounts.find {
             (it.email.equals(cleanId, ignoreCase = true) || it.name.equals(cleanId, ignoreCase = true)) &&
-                    it.password == password
+                    it.password == cleanPassword
         }
 
         if (user != null) {
             currentUser = user
             saveSession()
-            return AuthResult.Success(user)
+            return if (user.isAdmin || isAdminIdentifier(user.email) || isAdminIdentifier(user.name)) {
+                AuthResult.Admin
+            } else {
+                AuthResult.Success(user)
+            }
         }
 
         return AuthResult.Error("Invalid username/email or password. Please check and try again.")

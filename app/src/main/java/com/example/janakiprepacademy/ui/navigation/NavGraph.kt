@@ -32,6 +32,7 @@ fun JanakiNavGraph(
 ) {
     val startDestination = when {
         !isLoggedIn -> Screen.Login.route
+        AuthManager.currentUser?.isAdmin == true || AuthManager.isAdminIdentifier(AuthManager.currentUser?.email ?: "") -> Screen.AdminPanel.route
         !isOnboarded -> Screen.Onboarding.route
         else -> Screen.Dashboard.route
     }
@@ -85,6 +86,9 @@ fun JanakiNavGraph(
                 },
                 onProfileClick = {
                     navController.navigate(Screen.Profile.route)
+                },
+                onAdminClick = {
+                    navController.navigate(Screen.AdminPanel.route)
                 }
             )
         }
@@ -152,6 +156,9 @@ fun JanakiNavGraph(
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                },
+                onAdminClick = {
+                    navController.navigate(Screen.AdminPanel.route)
                 }
             )
         }

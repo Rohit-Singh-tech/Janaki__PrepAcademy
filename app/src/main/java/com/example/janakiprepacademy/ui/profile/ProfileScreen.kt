@@ -30,7 +30,8 @@ import com.example.janakiprepacademy.ui.theme.*
 @Composable
 fun ProfileScreen(
     onBackClick: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onAdminClick: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -155,6 +156,15 @@ fun ProfileScreen(
                 colors = CardDefaults.cardColors(containerColor = PureWhite)
             ) {
                 Column {
+                    if (currentUser?.isAdmin == true || com.example.janakiprepacademy.data.AuthManager.isAdminIdentifier(currentUser?.email ?: "")) {
+                        SettingsItem(
+                            icon = Icons.Filled.AdminPanelSettings,
+                            title = "👑 Admin Management Portal",
+                            subtitle = "Upload PDF question papers & manage exams",
+                            onClick = onAdminClick
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
                     SettingsItem(
                         icon = Icons.Filled.School,
                         title = "Exam Track",

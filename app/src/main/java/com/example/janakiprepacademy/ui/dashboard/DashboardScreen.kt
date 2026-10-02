@@ -24,8 +24,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.janakiprepacademy.data.AuthManager
 import com.example.janakiprepacademy.data.model.ExamTrack
 import com.example.janakiprepacademy.ui.theme.*
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 
 /**
  * Main Dashboard — The home screen hub for Janaki PrepAcademy.
@@ -36,7 +38,8 @@ import com.example.janakiprepacademy.ui.theme.*
 fun DashboardScreen(
     onExamTrackClick: (ExamTrack) -> Unit,
     onLeaderboardClick: () -> Unit,
-    onProfileClick: () -> Unit
+    onProfileClick: () -> Unit,
+    onAdminClick: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -57,6 +60,22 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
+                    if (AuthManager.currentUser?.isAdmin == true || AuthManager.isAdminIdentifier(AuthManager.currentUser?.email ?: "")) {
+                        FilledTonalButton(
+                            onClick = onAdminClick,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = JanakiMaroon,
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            Icon(Icons.Filled.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Admin", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     IconButton(onClick = onLeaderboardClick) {
                         Icon(
                             Icons.Filled.Leaderboard,
@@ -87,6 +106,51 @@ fun DashboardScreen(
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(modifier = Modifier.height(8.dp))
+
+            // ━━━ Admin Quick Access Card (Visible only to Admin) ━━━
+            if (AuthManager.currentUser?.isAdmin == true || AuthManager.isAdminIdentifier(AuthManager.currentUser?.email ?: "")) {
+                Card(
+                    onClick = onAdminClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(JanakiOrange)
+                        ) {
+                            Icon(Icons.Filled.AdminPanelSettings, contentDescription = null, tint = Color.White)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("👑 Admin Portal", fontWeight = FontWeight.Bold, color = JanakiGold, fontSize = 15.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = JanakiMaroon,
+                                    contentColor = Color.White
+                                ) {
+                                    Text("PORTAL", fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                }
+                            }
+                            Text("Upload question PDFs, manage mock tests & answer keys", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = JanakiGold, modifier = Modifier.size(16.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
             // ━━━ Quick Stats Banner ━━━
             QuickStatsBanner()

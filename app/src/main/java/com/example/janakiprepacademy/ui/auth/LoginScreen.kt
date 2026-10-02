@@ -287,12 +287,17 @@ fun LoginScreen(
                                 isLoading = false
                                 when (result) {
                                     is AuthResult.Admin -> {
-                                        Toast.makeText(context, "Welcome Admin Rohit!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "👑 Welcome Admin Rohit! Opening Admin Portal...", Toast.LENGTH_SHORT).show()
                                         onAdminLogin()
                                     }
                                     is AuthResult.Success -> {
-                                        Toast.makeText(context, "Welcome back, ${result.user.name}!", Toast.LENGTH_SHORT).show()
-                                        onLoginSuccess()
+                                        if (result.user.isAdmin || AuthManager.isAdminIdentifier(result.user.email) || AuthManager.isAdminIdentifier(result.user.name)) {
+                                            Toast.makeText(context, "👑 Welcome Admin Rohit! Opening Admin Portal...", Toast.LENGTH_SHORT).show()
+                                            onAdminLogin()
+                                        } else {
+                                            Toast.makeText(context, "Welcome back, ${result.user.name}!", Toast.LENGTH_SHORT).show()
+                                            onLoginSuccess()
+                                        }
                                     }
                                     is AuthResult.Error -> {
                                         errorMessage = result.message
