@@ -156,7 +156,7 @@ fun ProfileScreen(
                 colors = CardDefaults.cardColors(containerColor = PureWhite)
             ) {
                 Column {
-                    if (currentUser?.isAdmin == true || com.example.janakiprepacademy.data.AuthManager.isAdminIdentifier(currentUser?.email ?: "")) {
+                    if (currentUser?.isAdmin == true) {
                         SettingsItem(
                             icon = Icons.Filled.AdminPanelSettings,
                             title = "👑 Admin Management Portal",

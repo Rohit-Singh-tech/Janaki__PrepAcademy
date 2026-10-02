@@ -32,7 +32,7 @@ fun JanakiNavGraph(
 ) {
     val startDestination = when {
         !isLoggedIn -> Screen.Login.route
-        AuthManager.currentUser?.isAdmin == true || AuthManager.isAdminIdentifier(AuthManager.currentUser?.email ?: "") -> Screen.AdminPanel.route
+        AuthManager.currentUser?.isAdmin == true -> Screen.AdminPanel.route
         !isOnboarded -> Screen.Onboarding.route
         else -> Screen.Dashboard.route
     }

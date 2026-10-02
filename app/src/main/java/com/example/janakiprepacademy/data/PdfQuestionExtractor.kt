@@ -111,21 +111,156 @@ object PdfQuestionExtractor {
 
     /**
      * Parses questions, options, answer keys, and explanations from extracted document text.
-     * Automatically detects Bihar STET / BSEB / TCS response sheet format,
-     * with fallback to standard line-by-line question format.
+     * Automatically detects:
+     * 1. Bihar STET 2024 / Sify / Testbook CBT response sheets (with QID : <ID> and Options: 1-4)
+     * 2. Bihar STET 2023 / BSEB / TCS CBT response sheets (with Question Ids, Option Ids, and Right Option Ids)
+     * 3. General coaching and standard question formats (Q1., Question 1:, 1., प्रश्न 1:, etc.)
      */
     fun parseQuestionsFromDocumentText(text: String, defaultSection: String = "Uploaded Section"): List<Question> {
         val normalized = normalizeText(text)
 
-        // Check if this document uses BSEB / TCS CBT question paper format
-        val isBsebFormat = normalized.contains("Question Id :", ignoreCase = true) ||
+        val isBseb2024Format = normalized.contains("QID :", ignoreCase = true) &&
+                normalized.contains("Options:", ignoreCase = true)
+
+        val isBseb2023Format = normalized.contains("Question Id :", ignoreCase = true) ||
                 (normalized.contains("Right Option Id", ignoreCase = true) && normalized.contains("Answer : Option Id", ignoreCase = true))
 
-        return if (isBsebFormat) {
-            parseBsebStetQuestions(normalized, defaultSection)
-        } else {
-            parseGeneralQuestions(normalized, defaultSection)
+        return when {
+            isBseb2024Format -> parseBseb2024QidQuestions(normalized, defaultSection)
+            isBseb2023Format -> parseBsebStetQuestions(normalized, defaultSection)
+            else -> parseGeneralQuestions(normalized, defaultSection)
         }
+    }
+
+    /**
+     * Specialized parser for Bihar STET 2024 / Sify / Testbook official response sheets.
+     * Extracts all 150 questions (QID 301-450) across Computer Science, Art of Teaching, and Other Skills,
+     * strips browser URLs and page headers, cleanly formats bilingual question and options (1-4 -> A-D),
+     * and accurately maps official correct answers.
+     */
+    private fun parseBseb2024QidQuestions(text: String, defaultSection: String): List<Question> {
+        val result = mutableListOf<Question>()
+        val splitRegex = Regex("QID\\s*:\\s*(\\d+)", RegexOption.IGNORE_CASE)
+        val splits = splitRegex.split(text)
+        val matches = splitRegex.findAll(text).toList()
+
+        if (matches.isEmpty()) {
+            return parseGeneralQuestions(text, defaultSection)
+        }
+
+        // Detect domain section from preamble
+        var defaultDomainSection = defaultSection
+        val preamble = splits.firstOrNull() ?: ""
+        val subMatch = Regex("Subject\\s+&\\s+Subject\\s+Code\\s*([^\\n(]+)", RegexOption.IGNORE_CASE).find(preamble)
+        if (subMatch != null) {
+            val name = subMatch.groupValues[1].trim()
+            if (name.isNotBlank()) defaultDomainSection = name
+        } else if (preamble.contains("Computer Science", ignoreCase = true)) {
+            defaultDomainSection = "Computer Science"
+        }
+
+        for (i in matches.indices) {
+            val match = matches[i]
+            val qidStr = match.groupValues[1]
+            val qidNum = qidStr.toIntOrNull() ?: (i + 1)
+            val qBody = if (i + 1 < splits.size) splits[i + 1] else ""
+
+            // Clean web noise and browser print headers
+            val cleaned = qBody
+                .replace(Regex("https?://[^\\s]+"), "")
+                .replace(Regex("\\d{2}/\\d{2}/\\d{4},\\s*\\d{2}:\\d{2}"), "")
+                .replace(Regex("\\b\\d+/\\d+\\b"), "")
+                .replace(Regex("BIHAR\\s+SCHOOL\\s+EXAMINATION\\s+BOARD", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("Secondary\\s+Teacher\\s+Eligibility\\s+Test[^\\n]*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("LogoutView\\s+response[^\\n]*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("--- PAGE \\d+ ---", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("Paper\\s+Paper\\s*-\\s*2[^\\n]*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("Subject\\s+&\\s+Subject\\s+Code[^\\n]*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("Date\\s+of\\s+Examination[^\\n]*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("Batch\\s+Start\\s+Time[^\\n]*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("Batch\\s+End\\s+Time[^\\n]*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("Name\\s+Application\\s+No\\.\\s+Roll\\s+No\\.", RegexOption.IGNORE_CASE), "")
+
+            val optSplit = cleaned.split(Regex("\\bOptions\\s*:\\s*", RegexOption.IGNORE_CASE))
+            if (optSplit.size < 2) continue
+
+            val rawQText = optSplit[0]
+                .replace(Regex("^[-\\s]+"), "")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+
+            val rawOptionsPart = optSplit[1]
+
+            // Extract Correct Answer
+            val ansMatch = Regex("Correct\\s+Answer\\s*:\\s*([1-4A-Da-d])\\)?\\s*(.*?)(?:Candidate\\s+Answer|$)", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)).find(rawOptionsPart)
+            val rawKey = ansMatch?.groupValues?.get(1)?.uppercase() ?: "1"
+            val correctLetter = when (rawKey) {
+                "1" -> "A"
+                "2" -> "B"
+                "3" -> "C"
+                "4" -> "D"
+                else -> rawKey
+            }
+            val ansText = ansMatch?.groupValues?.get(2)?.replace(Regex("\\s+"), " ")?.trim() ?: ""
+
+            // Extract options with line-start requirement to avoid confusing formulas or acronyms like (LSB) with option keys
+            val optsOnly = rawOptionsPart.split(Regex("Correct\\s+Answer\\s*:", RegexOption.IGNORE_CASE)).firstOrNull() ?: rawOptionsPart
+            val optMatches = Regex("(?:^|\\n)\\s*([1-4A-Da-d])\\)\\s*(.*?)(?=(?:\\n\\s*[1-4A-Da-d]\\)|$))", RegexOption.DOT_MATCHES_ALL).findAll(optsOnly).toList()
+
+            val parsedOptions = mutableListOf<QuestionOption>()
+            for (om in optMatches) {
+                val numKey = om.groupValues[1].uppercase()
+                val letter = when (numKey) {
+                    "1" -> "A"
+                    "2" -> "B"
+                    "3" -> "C"
+                    "4" -> "D"
+                    else -> numKey
+                }
+                val oText = om.groupValues[2].replace(Regex("\\s+"), " ").trim()
+                if (oText.isNotBlank()) {
+                    parsedOptions.add(QuestionOption(letter, oText))
+                }
+            }
+
+            // Fallback ensure at least 4 options
+            val seenLetters = parsedOptions.map { it.id }.toSet()
+            if ("A" !in seenLetters) parsedOptions.add(0, QuestionOption("A", "Option A"))
+            if ("B" !in seenLetters) parsedOptions.add(1.coerceAtMost(parsedOptions.size), QuestionOption("B", "Option B"))
+            if ("C" !in seenLetters) parsedOptions.add(2.coerceAtMost(parsedOptions.size), QuestionOption("C", "Option C"))
+            if ("D" !in seenLetters) parsedOptions.add(3.coerceAtMost(parsedOptions.size), QuestionOption("D", "Option D"))
+
+            // Determine Section based on official STET 150-mark pattern:
+            // First 100 questions (QID 301-400): Domain Subject (Computer Science)
+            // Next 30 questions (QID 401-430): Art of Teaching
+            // Final 20 questions (QID 431-450): Other Skills
+            val questionIndex = result.size + 1
+            val section = when {
+                qidNum <= 400 || questionIndex <= 100 -> defaultDomainSection
+                qidNum in 401..430 || (questionIndex in 101..130) -> "Art Of Teaching"
+                else -> "Other Skills"
+            }
+
+            val displayText = if (rawQText.isNotBlank()) rawQText else "Question #$questionIndex (Refer to diagram)"
+            val explanation = if (ansText.isNotBlank()) {
+                "Correct Answer: Option $correctLetter — $ansText"
+            } else {
+                "Correct Answer: Option $correctLetter"
+            }
+
+            result.add(
+                Question(
+                    questionId = "bseb2024_qid_${qidStr}",
+                    sectionName = section,
+                    text = displayText,
+                    options = parsedOptions.take(5),
+                    correctOption = correctLetter,
+                    explanation = explanation
+                )
+            )
+        }
+
+        return result
     }
 
     /**

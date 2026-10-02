@@ -60,7 +60,7 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
-                    if (AuthManager.currentUser?.isAdmin == true || AuthManager.isAdminIdentifier(AuthManager.currentUser?.email ?: "")) {
+                    if (AuthManager.currentUser?.isAdmin == true) {
                         FilledTonalButton(
                             onClick = onAdminClick,
                             shape = RoundedCornerShape(8.dp),
@@ -108,7 +108,7 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // ━━━ Admin Quick Access Card (Visible only to Admin) ━━━
-            if (AuthManager.currentUser?.isAdmin == true || AuthManager.isAdminIdentifier(AuthManager.currentUser?.email ?: "")) {
+            if (AuthManager.currentUser?.isAdmin == true) {
                 Card(
                     onClick = onAdminClick,
                     modifier = Modifier.fillMaxWidth(),
