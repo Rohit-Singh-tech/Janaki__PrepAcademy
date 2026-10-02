@@ -333,13 +333,52 @@ object SampleDataProvider {
 
     fun appendQuestionsToExam(examId: String, newQuestions: List<Question>, context: android.content.Context? = null): Exam? {
         val target = getAvailableExams().find { it.examId == examId } ?: return null
-        val updatedSections = if (target.sections.isNotEmpty()) {
-            val first = target.sections.first()
-            listOf(first.copy(questions = first.questions + newQuestions)) + target.sections.drop(1)
+        val groupedNew = newQuestions.groupBy { it.sectionName.ifBlank { "Domain Subject" } }
+
+        val existingSections = target.sections.toMutableList()
+        val updatedSections = mutableListOf<ExamSection>()
+
+        if (existingSections.size <= 1 && (existingSections.isEmpty() || existingSections.first().questions.isEmpty())) {
+            // Replace placeholder with new structured sections
+            groupedNew.entries.forEachIndexed { idx, entry ->
+                updatedSections.add(ExamSection("sec_${idx + 1}", entry.key, entry.value))
+            }
         } else {
-            listOf(ExamSection("sec_main", "Uploaded Questions", newQuestions))
+            val assignedKeys = mutableSetOf<String>()
+            for (sec in existingSections) {
+                val matching = groupedNew.entries.find { it.key.equals(sec.name, ignoreCase = true) }
+                if (matching != null) {
+                    updatedSections.add(sec.copy(questions = sec.questions + matching.value))
+                    assignedKeys.add(matching.key)
+                } else {
+                    updatedSections.add(sec)
+                }
+            }
+            for ((secName, qList) in groupedNew) {
+                if (secName !in assignedKeys) {
+                    if (existingSections.size <= 1 && assignedKeys.isEmpty()) {
+                        updatedSections.add(
+                            ExamSection("sec_${java.util.UUID.randomUUID().toString().take(6)}", secName, qList)
+                        )
+                    } else {
+                        val first = updatedSections.firstOrNull()
+                        if (first != null) {
+                            updatedSections[0] = first.copy(questions = first.questions + qList)
+                        } else {
+                            updatedSections.add(ExamSection("sec_main", secName, qList))
+                        }
+                    }
+                }
+            }
         }
-        val updated = target.copy(sections = updatedSections)
+
+        val finalSections = if (updatedSections.isEmpty()) {
+            listOf(ExamSection("sec_main", "Uploaded Questions", newQuestions))
+        } else {
+            updatedSections
+        }
+
+        val updated = target.copy(sections = finalSections)
         customExams.removeAll { it.examId == examId }
         customExams.add(0, updated)
         persistExams(context)

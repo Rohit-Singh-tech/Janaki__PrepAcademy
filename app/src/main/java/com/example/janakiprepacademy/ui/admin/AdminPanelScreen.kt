@@ -108,6 +108,8 @@ fun AdminPanelScreen(
         }
     }
 
+    var questionPreviewPage by remember { mutableIntStateOf(0) }
+
     // Real PDF & Document Picker Launcher
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -129,9 +131,13 @@ fun AdminPanelScreen(
                         if (parsed.isNotEmpty()) {
                             questions.clear()
                             questions.addAll(parsed)
+                            questionPreviewPage = 0
+                            val secSummary = parsed.groupBy { it.sectionName }
+                                .map { "${it.key}: ${it.value.size}" }
+                                .joinToString(", ")
                             Toast.makeText(
                                 context,
-                                "✅ Successfully extracted ${parsed.size} questions from PDF!",
+                                "✅ Successfully extracted ${parsed.size} questions from PDF!\n$secSummary",
                                 Toast.LENGTH_LONG
                             ).show()
                         } else {
@@ -672,13 +678,76 @@ fun AdminPanelScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Questions List
-                    questions.forEachIndexed { index, q ->
+                    // Questions List with Smooth Pagination for large papers (e.g. 150 questions)
+                    val previewPageSize = 10
+                    val totalPages = if (questions.isEmpty()) 1 else ((questions.size - 1) / previewPageSize) + 1
+                    val safePage = questionPreviewPage.coerceIn(0, totalPages - 1)
+                    val startIndex = safePage * previewPageSize
+                    val endIndex = (startIndex + previewPageSize).coerceAtMost(questions.size)
+
+                    if (questions.size > previewPageSize) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = JanakiOrange.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, JanakiOrange.copy(alpha = 0.3f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Showing Q${startIndex + 1}–$endIndex of ${questions.size}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = JanakiOrangeDark
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { if (safePage > 0) questionPreviewPage = safePage - 1 },
+                                        enabled = safePage > 0,
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text("◀ Prev", fontSize = 11.sp)
+                                    }
+                                    Text(
+                                        "${safePage + 1}/$totalPages",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    OutlinedButton(
+                                        onClick = { if (safePage < totalPages - 1) questionPreviewPage = safePage + 1 },
+                                        enabled = safePage < totalPages - 1,
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text("Next ▶", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
+                    for (i in startIndex until endIndex) {
+                        val q = questions[i]
                         QuestionEditCard(
-                            index = index + 1,
+                            index = i + 1,
                             question = q,
-                            onUpdate = { updated -> questions[index] = updated },
-                            onDelete = { questions.removeAt(index) }
+                            onUpdate = { updated -> questions[i] = updated },
+                            onDelete = {
+                                questions.removeAt(i)
+                                if (questionPreviewPage >= totalPages) {
+                                    questionPreviewPage = (totalPages - 2).coerceAtLeast(0)
+                                }
+                            }
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                     }
@@ -697,7 +766,7 @@ fun AdminPanelScreen(
                         availableExams = SampleDataProvider.getAvailableExams()
                         publishedExamId = selectedExamId
                         val totalCount = updated?.sections?.sumOf { it.questions.size } ?: questions.size
-                        publishSuccessMessage = "Successfully appended ${questions.size} questions to '${selectedExistingExam?.title}'!\n\nThis exam now has $totalCount total questions and is ready for students in the CBT player."
+                        publishSuccessMessage = "Successfully appended ${questions.size} questions to '${selectedExistingExam?.title}'!\n\nThis exam now has $totalCount total questions across ${updated?.sections?.size ?: 1} sections and is ready for students in the CBT player."
                         showPublishSuccessDialog = true
                     },
                     modifier = Modifier
@@ -722,6 +791,14 @@ fun AdminPanelScreen(
                             return@Button
                         }
                         val examId = "custom_exam_${UUID.randomUUID().toString().take(8)}"
+                        val distinctSections = questions.groupBy { it.sectionName.ifBlank { "Comprehensive Paper" } }
+                        val examSections = distinctSections.entries.mapIndexed { idx, entry ->
+                            ExamSection(
+                                sectionId = "sec_${idx + 1}",
+                                name = entry.key,
+                                questions = entry.value
+                            )
+                        }
                         val newExam = Exam(
                             examId = examId,
                             title = testTitle.ifBlank { "${selectedTrack.displayName} Mock Test" },
@@ -730,20 +807,14 @@ fun AdminPanelScreen(
                             correctMarks = correctMarks.toDoubleOrNull() ?: 1.0,
                             negativeMarks = negativeMarks.toDoubleOrNull() ?: 0.0,
                             optionsPerQuestion = if (isFiveOptions) 5 else 4,
-                            sections = listOf(
-                                ExamSection(
-                                    sectionId = "sec_main",
-                                    name = "Comprehensive Paper",
-                                    questions = questions.toList()
-                                )
-                            ),
+                            sections = examSections,
                             isFree = true,
                             totalAttempts = 0
                         )
                         SampleDataProvider.addCustomExam(newExam, context)
                         availableExams = SampleDataProvider.getAvailableExams()
                         publishedExamId = examId
-                        publishSuccessMessage = "'$testTitle' with ${questions.size} questions has been published! Students can now take this CBT exam in the app."
+                        publishSuccessMessage = "'$testTitle' with ${questions.size} questions across ${examSections.size} sections has been published! Students can now take this CBT exam in the app."
                         showPublishSuccessDialog = true
                     },
                     modifier = Modifier
@@ -799,11 +870,14 @@ fun AdminPanelScreen(
                         if (parsed.isNotEmpty()) {
                             questions.clear()
                             questions.addAll(parsed)
-                            Toast.makeText(context, "Parsed ${parsed.size} questions!", Toast.LENGTH_SHORT).show()
+                            questionPreviewPage = 0
+                            val secSummary = parsed.groupBy { it.sectionName }.map { "${it.key}: ${it.value.size}" }.joinToString(", ")
+                            Toast.makeText(context, "Parsed ${parsed.size} questions! ($secSummary)", Toast.LENGTH_SHORT).show()
                             showPasteDialog = false
                         } else {
                             Toast.makeText(context, "Could not parse format. Loading template instead.", Toast.LENGTH_SHORT).show()
                             questions.addAll(generateDefaultAdminQuestions())
+                            questionPreviewPage = 0
                             showPasteDialog = false
                         }
                     },
