@@ -4,7 +4,9 @@ import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import kotlinx.coroutines.launch
@@ -23,7 +25,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -31,6 +35,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.janakiprepacademy.R
 import com.example.janakiprepacademy.data.AuthManager
 import com.example.janakiprepacademy.data.AuthResult
 import com.example.janakiprepacademy.ui.theme.*
@@ -110,25 +115,16 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // ━━━ BRANDING HERO ━━━
-            Box(
-                contentAlignment = Alignment.Center,
+            Image(
+                painter = painterResource(id = R.drawable.app_logo),
+                contentDescription = "Janaki Prep Academy Logo",
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(90.dp)
+                    .size(96.dp)
                     .scale(logoScale)
                     .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(JanakiGold, JanakiOrangeLight)
-                        )
-                    )
-            ) {
-                Text(
-                    text = "JP",
-                    fontSize = 38.sp,
-                    fontWeight = FontWeight.Black,
-                    color = JanakiOrangeDark
-                )
-            }
+                    .border(2.dp, JanakiGold, CircleShape)
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
