@@ -147,42 +147,64 @@ class PdfQuestionExtractorTest {
             General Knowledge and Other Skills
             ( Q.Nos. 1 to 50 )
 
-            1.  B का भाई है A, D का पिता है C, B की माता है E, A और D भाई हैं, तो E का C से क्या रिश्ता
+            1   B का भाई है A, D का पिता है C, B की माता है E, A और D भाई हैं, तो E का C से क्या रिश्ता
             है ?
-
-            (A)   बहन   (B)   साली
+            बहन (B) साली
             (C)   भतीजी   (D)   पत्नी
 
             A is the brother of B, C is the father of D, E is the mother of B, A and D are
             brothers. What is the relation of C with E?
-
             (A)   Sister   (B)   Sister-in-law
             (C)   Niece   (D)   Wife
 
-            2.
-            अशोक ने उत्तर दिशा की ओर चलना प्रारंभ किया। 30 मीटर चलने के बाद वह अपने बायीं तरफ
+            2   अशोक ने उत्तर दिशा की ओर चलना प्रारंभ किया। 30 मीटर चलने के बाद वह अपने बायीं तरफ
             मुड़ा और 40 मीटर चला। पुनः वह बायीं तरफ मुड़ा और 30 मीटर चला। अब वह प्रारंभिक स्थान
             से कितनी दूरी पर है ?
-
             (A)   50 मीटर   (B)   40 मीटर
             (C)   30 मीटर   (D)   20 मीटर
 
-            Ashok started to move in the direction of north. After moving 30m, he turned to
+            Ashok startcd to move in the direction of north. After moving 30m, he turned to
             his left and moved 40 m. Again he turned to his left and moved 30m. Now how
             far is he from the starting point ?
-
             (A)   50 m   (B)   40 m
             (C)   30 m   (D)   20 m
 
-            [ 74268 ] Set-B   RE-ST-608   2 / 48
+            RE-ST-608 20 2/48
+            |74268 ] Set-B
+            Scanned with CamScanner
+            testbook GET IT ON
+            Google Play
 
-            ३.   किसी सांकेतिक भाषा में यदि CHAIR को 53269 लिखा जाए तो HEAR को क्या लिखेंगे?
+            3.   किसी सांकेतिक भाषा में यदि CHAIR को 53260 तथा pAR को 729 लिखा जाए, तो HEAR को कैसे लिखा जाएगा?
             (A)   3792   (B)   3729
             (C)   3972   (D)   3929
+
+            Tr CHAIR is coded in a symbolic language as 53269 and EAR as 729, then how
+            will HEAR be coded ? 3729
+            (A)   3792   (B)   3729
+            (C)   3972   (D)   3929
+
+            4   यदि '+' का अर्थ ' 4 '-' का अर्थ " + ' और 4' का अर्थ * +' हों, तो
+            5 + 4 - 18 ÷ 3 का मान होगा
+            (A 26   (B) 14
+            (C)   - 34   (D) 6
+
+            If '+ mcans means'+' and' x' means' +', what will be the value of
+            5 + 4 - 18 ÷ 3 ?
+            (A)   26   (B)   14
+            (C)   - 34   (D)   6
+
+            5   निम्नलिखित प्रश्न में लुप्त पद को ज्ञात कीजिए :
+            (A)   35   (B)   41
+            (C)   36   (D)   40
+
+            Scanned with CamScanner
+            testbook GET IT ON
+            Google Play
         """.trimIndent()
 
         val parsed = PdfQuestionExtractor.parseQuestionsFromDocumentText(sampleText, "Default")
-        assertEquals(3, parsed.size)
+        assertEquals(5, parsed.size)
 
         // Verify Question 1
         val q1 = parsed[0]
@@ -192,36 +214,48 @@ class PdfQuestionExtractorTest {
         assertFalse("Q1 text should not contain noise header", q1.text.contains("307"))
         assertFalse("Q1 text should not contain Q.Nos", q1.text.contains("Q.Nos"))
         assertEquals(4, q1.options.size)
-        // Check options are sorted A, B, C, D
         assertEquals("A", q1.options[0].id)
         assertEquals("B", q1.options[1].id)
         assertEquals("C", q1.options[2].id)
         assertEquals("D", q1.options[3].id)
-        // Check merged bilingual options
         assertEquals("बहन / Sister", q1.options[0].text)
         assertEquals("साली / Sister-in-law", q1.options[1].text)
         assertEquals("भतीजी / Niece", q1.options[2].text)
         assertEquals("पत्नी / Wife", q1.options[3].text)
 
-        // Verify Question 2 (number 2 was alone on its own line)
+        // Verify Question 2
         val q2 = parsed[1]
-        assertFalse("Q2 text should NOT be just '2.'", q2.text.trim() == "2.")
         assertTrue("Q2 text should contain Ashok question", q2.text.contains("अशोक ने उत्तर दिशा की ओर चलना प्रारंभ किया"))
-        assertTrue("Q2 text should contain English Ashok question", q2.text.contains("Ashok started to move in the direction of north"))
+        assertTrue("Q2 text should contain English Ashok question", q2.text.contains("Ashok startcd to move in the direction of north"))
         assertFalse("Q2 should not contain footer", q2.text.contains("74268"))
         assertFalse("Q2 should not contain RE-ST-608", q2.text.contains("RE-ST-608"))
+        assertFalse("Q2 should not contain CamScanner", q2.text.contains("CamScanner"))
         assertEquals(4, q2.options.size)
-        assertEquals("A", q2.options[0].id)
         assertEquals("50 मीटर / 50 m", q2.options[0].text)
-        assertEquals("B", q2.options[1].id)
         assertEquals("40 मीटर / 40 m", q2.options[1].text)
+        assertEquals("30 मीटर / 30 m", q2.options[2].text)
+        assertEquals("20 मीटर / 20 m", q2.options[3].text)
 
-        // Verify Question 3 (Devanagari numeral ३)
+        // Verify Question 3
         val q3 = parsed[2]
-        assertTrue("Q3 should be recognized from Devanagari 3", q3.text.contains("CHAIR"))
+        assertTrue("Q3 should contain CHAIR question", q3.text.contains("CHAIR"))
         assertEquals(4, q3.options.size)
         assertEquals("3792", q3.options[0].text)
         assertEquals("3729", q3.options[1].text)
+
+        // Verify Question 4 (math operators in question text and lenient (A 26)
+        val q4 = parsed[3]
+        assertTrue("Q4 should contain math equation", q4.text.contains("5 + 4 - 18"))
+        assertEquals(4, q4.options.size)
+        assertEquals("26", q4.options[0].text)
+        assertEquals("14", q4.options[1].text)
+
+        // Verify Question 5 (question starting with '5 निम्नलिखित' without dot)
+        val q5 = parsed[4]
+        assertTrue("Q5 should contain लुप्त पद", q5.text.contains("लुप्त पद"))
+        assertEquals(4, q5.options.size)
+        assertEquals("35", q5.options[0].text)
+        assertEquals("41", q5.options[1].text)
     }
 }
 

@@ -591,13 +591,19 @@ object PdfQuestionExtractor {
         var currentAns = "A"
         var currentExp = ""
 
-        // Matches: "Question 1", "Question 1:", "Q.1", "Q1.", "1.", "1 -", "प्रश्न 1:", "प्र. 1"
-        val qRegex = Regex("^(?:(?:Q(?:uestion)?|प्रश्न|प्र)\\s*[.:\\-–—]?\\s*([0-9०-९]+)[.:\\)\\-–—]?\\s*|([0-9०-९]+)[.:\\)\\-–—]\\s*)(.*)", RegexOption.IGNORE_CASE)
-        val singleOptRegex = Regex("^(?:[({\\[](?:Option\\s*)?([A-Ea-eक-ङ1-5])[)\\]}]|([A-Ea-eक-ङ])\\s*[.:\\)\\]}–—-]\\s*|(?:Option\\s+([A-Ea-eक-ङ1-5])|([1-5])[)\\]}]))\\s*(.*)", RegexOption.IGNORE_CASE)
-        val multiOptPattern = Regex(
-            "(?:[({\\[]([A-Ea-eक-ङ1-5])[)\\]}]|(?:^|\\s{2,})([A-Ea-eक-ङ])[.:\\)\\]–—-]\\s*)\\s*([^(){\\[]+?)(?=(?:[({\\[][A-Ea-eक-ङ1-5][)\\]}]|\\s{2,}[A-Ea-eक-ङ][.:\\)\\]–—-]\\s*)|$)",
+        // Matches: "Question 1", "Q.1", "1.", "1)", "1 -", "1 B का भाई है", "2 अशोक ने", "5 निम्नलिखित", or standalone "2"
+        val qRegex = Regex(
+            "^\\s*(?:(?:Q(?:uestion)?|प्रश्न|प्र)\\s*[.:\\-–—]?\\s*([0-9०-९]{1,3})[.:\\)\\-–—]?\\s*(.*)|([0-9०-९]{1,3})\\s*[.:\\)\\-–—]\\s*(.*)|([0-9०-९]{1,3})\\s+([A-Za-z\u0900-\u097F].*)|([0-9०-९]{1,3})\\s*$)",
             RegexOption.IGNORE_CASE
         )
+        val unitWords = Regex("^(?:m|मीटर|km|cm|mm|kg|gm|%|s|sec|min|hr|hours?|days?)\\b", RegexOption.IGNORE_CASE)
+
+        val singleOptRegex = Regex("^(?:[({\\[](?:Option\\s*)?([A-Ea-eक-ङ1-5])[)\\]}]?|([A-Ea-eक-ङ])\\s*[.:\\)\\]}–—-]\\s*|(?:Option\\s+([A-Ea-eक-ङ1-5])|([1-5])[)\\]}]))\\s*(.*)", RegexOption.IGNORE_CASE)
+        val multiOptPattern = Regex(
+            "(?:[({\\[]\\s*([A-Ea-eक-ङ1-5])\\s*[)\\]}]?|(?:^|\\s{2,})([A-Ea-eक-ङ])[.:\\)\\]–—-]\\s*)\\s*([^(){\\[]+?)(?=(?:[({\\[]\\s*[A-Ea-eक-ङ1-5]\\s*[)\\]}]?|\\s{2,}[A-Ea-eक-ङ][.:\\)\\]–—-]\\s*)|$)",
+            RegexOption.IGNORE_CASE
+        )
+        val implicitAPattern = Regex("^(.*?)\\s+[({\\[]?\\s*([Bb2ख])\\s*[)\\]}.:–—-]\\s*(.*)$")
         val ansRegex = Regex("^(?:Right\\s*Option\\s*Id|Right\\s*Answer|Answer|Ans|उत्तर|Correct\\s*Option|Key)\\s*[:\\-–—.]?\\s*(?:Option\\s*)?[({\\[]?([A-Ea-eक-ङ1-5])[)\\]}]?", RegexOption.IGNORE_CASE)
         val expRegex = Regex("^(?:Explanation|Solution|व्याख्या|हल)\\s*[:\\-–—.]?\\s*(.*)", RegexOption.IGNORE_CASE)
         val secRegex = Regex("^(?:Section|Subject|General Knowledge|Computer Science|Art of Teaching|Other Skills|सामान्य ज्ञान|शिक्षण कला|अन्य दक्षता|विषय|खंड|भाग)\\b.*", RegexOption.IGNORE_CASE)
@@ -673,17 +679,22 @@ object PdfQuestionExtractor {
         }
 
         for (line in lines) {
-            // Ignore standalone numeric lines, URLs, page markers, booklet serials
+            // Ignore standalone numeric lines, URLs, page markers, booklet serials, and scan watermarks
             if (Regex("^\\d{1,8}$").matches(line) ||
                 Regex("^\\[?\\s*\\d{1,6}\\s*\\]?$").matches(line) ||
-                Regex("^\\[?\\s*\\d+\\s*\\]?\\s*Set-[A-Za-z0-9]+.*$", RegexOption.IGNORE_CASE).matches(line) ||
-                Regex("^(?:RE-ST|STET|BSEB|SET|PAPER|CODE)[\\w\\s\\-–—]*$", RegexOption.IGNORE_CASE).matches(line) ||
+                line.contains("CamScanner", ignoreCase = true) ||
+                line.contains("testbook", ignoreCase = true) ||
+                line.contains("Google Play", ignoreCase = true) ||
+                line.contains("GET IT ON", ignoreCase = true) ||
+                line.contains("App Store", ignoreCase = true) ||
+                Regex("^[|(\\[]?\\s*\\d+\\s*[\\])\\|}]?\\s*Set-[A-Za-z0-9]+.*$", RegexOption.IGNORE_CASE).matches(line) ||
+                Regex("^(?:RE-ST|STET|BSEB|SET|PAPER|CODE)[\\w\\s\\-/–—.:]*$", RegexOption.IGNORE_CASE).matches(line) ||
                 Regex("^\\d+\\s*/\\s*\\d+$").matches(line) ||
                 Regex("^\\(?\\s*Q\\.?\\s*Nos?\\.?\\s*\\d+\\s*to\\s*\\d+\\s*\\)?$", RegexOption.IGNORE_CASE).matches(line) ||
                 Regex("^--- PAGE \\d+ ---$", RegexOption.IGNORE_CASE).matches(line) ||
                 line.startsWith("http://", ignoreCase = true) ||
                 line.startsWith("https://", ignoreCase = true) ||
-                Regex("^Page-\\s*\\d+$", RegexOption.IGNORE_CASE).matches(line)
+                Regex("^Page-?\\s*\\d+$", RegexOption.IGNORE_CASE).matches(line)
             ) {
                 continue
             }
@@ -691,7 +702,19 @@ object PdfQuestionExtractor {
             val secMatch = secRegex.find(line)
             val ansMatch = ansRegex.find(line)
             val expMatch = expRegex.find(line)
-            val qMatch = qRegex.find(line)
+            var qMatch = qRegex.find(line)
+
+            // Guard against math equations (5 + 4 - 18) or measurements (30 m) falsely matching as question numbers
+            if (qMatch != null) {
+                val rawNum = qMatch.groupValues[1].ifBlank { qMatch.groupValues[3] }.ifBlank { qMatch.groupValues[5] }.ifBlank { qMatch.groupValues[7] }
+                val textPart = qMatch.groupValues[2].ifBlank { qMatch.groupValues[4] }.ifBlank { qMatch.groupValues[6] }.trim()
+                val isMathOrUnit = unitWords.containsMatchIn(textPart) ||
+                    textPart.startsWith("+") || textPart.startsWith("-") || textPart.startsWith("*") ||
+                    textPart.startsWith("/") || textPart.startsWith("÷") || textPart.startsWith("=")
+                if (isMathOrUnit) {
+                    qMatch = null
+                }
+            }
 
             // Check if line contains multiple side-by-side options e.g. "(A) बहन   (B) साली"
             val multiOptMatches = multiOptPattern.findAll(line).toList()
@@ -722,7 +745,7 @@ object PdfQuestionExtractor {
                 }
                 qMatch != null -> {
                     flushCurrentQuestion()
-                    val textPart = qMatch.groupValues[3].trim()
+                    val textPart = qMatch.groupValues[2].ifBlank { qMatch.groupValues[4] }.ifBlank { qMatch.groupValues[6] }.trim()
                     currentQText = textPart // can be empty if question number was alone on the line
                 }
                 multiOptMatches.size >= 2 -> {
@@ -731,6 +754,28 @@ object PdfQuestionExtractor {
                         val optText = m.groupValues[3].trim()
                         if (rawId.isNotBlank() && optText.isNotBlank()) {
                             addOrMergeOption(rawId, optText)
+                        }
+                    }
+                }
+                implicitAPattern.matches(line) -> {
+                    val impMatch = implicitAPattern.find(line)!!
+                    val prefix = impMatch.groupValues[1].trim()
+                    val bId = mapToLetter(impMatch.groupValues[2])
+                    val rest = impMatch.groupValues[3].trim()
+                    if (prefix.isNotBlank() && prefix.length < 60 && !prefix.endsWith("?")) {
+                        addOrMergeOption("A", prefix)
+                        addOrMergeOption(bId, rest)
+                    } else {
+                        if (currentOptions.size >= 4) {
+                            currentQText += "\n$line"
+                        } else if (currentOptions.isNotEmpty()) {
+                            val lastIdx = currentOptions.size - 1
+                            val lastOpt = currentOptions[lastIdx]
+                            currentOptions[lastIdx] = lastOpt.copy(text = "${lastOpt.text} $line")
+                        } else if (currentQText.isNotBlank()) {
+                            currentQText += "\n$line"
+                        } else {
+                            currentQText = line
                         }
                     }
                 }
