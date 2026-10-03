@@ -101,12 +101,8 @@ fun AdminPanelScreen(
     var publishedExamId by remember { mutableStateOf("") }
     var publishSuccessMessage by remember { mutableStateOf("") }
 
-    // Questions List State
-    val questions = remember {
-        mutableStateListOf<Question>().apply {
-            addAll(generateDefaultAdminQuestions())
-        }
-    }
+    // Questions List State (starts empty until PDF is uploaded or admin adds questions)
+    val questions = remember { mutableStateListOf<Question>() }
 
     var questionPreviewPage by remember { mutableIntStateOf(0) }
 
@@ -614,17 +610,28 @@ fun AdminPanelScreen(
 
                         OutlinedButton(
                             onClick = {
-                                val sample = generateDefaultAdminQuestions()
-                                questions.clear()
-                                questions.addAll(sample)
-                                Toast.makeText(context, "Loaded ${sample.size} Bihar STET questions!", Toast.LENGTH_SHORT).show()
+                                val newQ = Question(
+                                    questionId = "manual_q_${System.currentTimeMillis()}",
+                                    sectionName = selectedExistingExam?.sections?.firstOrNull()?.name ?: "Domain Subject",
+                                    text = "Enter question text...",
+                                    options = listOf(
+                                        QuestionOption("A", "Option A"),
+                                        QuestionOption("B", "Option B"),
+                                        QuestionOption("C", "Option C"),
+                                        QuestionOption("D", "Option D")
+                                    ),
+                                    correctOption = "A",
+                                    explanation = ""
+                                )
+                                questions.add(newQ)
+                                Toast.makeText(context, "Added 1 editable question!", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp), tint = JanakiGold)
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = JanakiOrange)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Load 5 Template Qs", fontSize = 12.sp)
+                            Text("+ Add 1 Question", fontSize = 12.sp)
                         }
                     }
                 }
@@ -875,10 +882,7 @@ fun AdminPanelScreen(
                             Toast.makeText(context, "Parsed ${parsed.size} questions! ($secSummary)", Toast.LENGTH_SHORT).show()
                             showPasteDialog = false
                         } else {
-                            Toast.makeText(context, "Could not parse format. Loading template instead.", Toast.LENGTH_SHORT).show()
-                            questions.addAll(generateDefaultAdminQuestions())
-                            questionPreviewPage = 0
-                            showPasteDialog = false
+                            Toast.makeText(context, "Could not detect valid questions in pasted text. Please check format.", Toast.LENGTH_LONG).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = JanakiOrange)
@@ -1052,119 +1056,5 @@ private fun QuestionEditCard(
  * from plain text or extracted PDF documents.
  */
 fun parseQuestionsFromDocumentText(text: String, sectionName: String = "Uploaded Section"): List<Question> {
-    val parsed = PdfQuestionExtractor.parseQuestionsFromDocumentText(text, sectionName)
-    return parsed.ifEmpty { generateDefaultAdminQuestions() }
+    return PdfQuestionExtractor.parseQuestionsFromDocumentText(text, sectionName)
 }
-
-/**
- * Default sample questions for Bihar STET CS test papers
- */
-fun generateDefaultAdminQuestions(): List<Question> = listOf(
-    Question(
-        questionId = "admin_q_1",
-        sectionName = "Data Structures & Algorithms",
-        text = "Which of the following data structures is used for implementing Breadth-First Search (BFS)?",
-        options = listOf(
-            QuestionOption("A", "Stack"),
-            QuestionOption("B", "Queue"),
-            QuestionOption("C", "Priority Queue"),
-            QuestionOption("D", "Array")
-        ),
-        correctOption = "B",
-        explanation = "Queue follows FIFO (First-In-First-Out) which is required for level-by-level BFS traversal."
-    ),
-    Question(
-        questionId = "admin_q_2",
-        sectionName = "Computer Networks",
-        text = "Which protocol is used to map an IP address to a MAC address in a local network?",
-        options = listOf(
-            QuestionOption("A", "DNS"),
-            QuestionOption("B", "ARP (Address Resolution Protocol)"),
-            QuestionOption("C", "DHCP"),
-            QuestionOption("D", "RARP")
-        ),
-        correctOption = "B",
-        explanation = "ARP (Address Resolution Protocol) maps a logical 32-bit IPv4 address to a physical 48-bit MAC address."
-    ),
-    Question(
-        questionId = "admin_q_3",
-        sectionName = "Database Management Systems",
-        text = "Which SQL clause is used to filter records after aggregation by the GROUP BY clause?",
-        options = listOf(
-            QuestionOption("A", "WHERE"),
-            QuestionOption("B", "HAVING"),
-            QuestionOption("C", "ORDER BY"),
-            QuestionOption("D", "LIMIT")
-        ),
-        correctOption = "B",
-        explanation = "HAVING filters groups created by GROUP BY, while WHERE filters individual rows before grouping."
-    ),
-    Question(
-        questionId = "admin_q_4",
-        sectionName = "Operating Systems",
-        text = "What is thrashing in an Operating System virtual memory system?",
-        options = listOf(
-            QuestionOption("A", "A high CPU utilization state"),
-            QuestionOption("B", "Excessive paging activity where CPU spends more time swapping than executing"),
-            QuestionOption("C", "A deadlock resolution algorithm"),
-            QuestionOption("D", "Disk fragmentation cleanup")
-        ),
-        correctOption = "B",
-        explanation = "Thrashing occurs when memory is overcommitted and processes spend more time page faulting and swapping pages than executing."
-    ),
-    Question(
-        questionId = "admin_q_5",
-        sectionName = "Software Engineering",
-        text = "Which software development life cycle model is best suited when requirements are not well understood upfront?",
-        options = listOf(
-            QuestionOption("A", "Waterfall Model"),
-            QuestionOption("B", "Prototyping / Agile Model"),
-            QuestionOption("C", "V-Model"),
-            QuestionOption("D", "RAD Model")
-        ),
-        correctOption = "B",
-        explanation = "Agile and Prototyping allow iterative feedback and requirement refinement when requirements are evolving."
-    )
-)
-
-const val samplePdfExtractedText = """
-Q1. Which sorting algorithm has an average time complexity of O(n log n) and is based on Divide and Conquer?
-A. Bubble Sort
-B. Insertion Sort
-C. Merge Sort
-D. Selection Sort
-Answer: C
-Explanation: Merge Sort divides the array into two halves, recursively sorts them, and merges them in O(n log n) time.
-
-Q2. In Relational Algebra, which operator corresponds to the SQL SELECT clause (column filtering)?
-A. Selection (σ)
-B. Projection (π)
-C. Cartesian Product (×)
-D. Join (⋈)
-Answer: B
-Explanation: Projection (π) selects specific attributes (columns) from a relation.
-
-Q3. What is the maximum number of nodes in a binary tree of depth k (root is at depth 1)?
-A. 2^k
-B. 2^(k-1)
-C. 2^k - 1
-D. 2^(k+1) - 1
-Answer: C
-Explanation: Maximum nodes = 1 + 2 + 4 + ... + 2^(k-1) = 2^k - 1.
-
-Q4. Which layer of the OSI model is responsible for end-to-end reliable data delivery and flow control?
-A. Network Layer
-B. Transport Layer
-C. Session Layer
-D. Data Link Layer
-Answer: B
-Explanation: Transport Layer (e.g. TCP) provides end-to-end connection, flow control, and error recovery.
-
-Q5. In Java / C++, which concept allows a subclass to provide a specific implementation of a method already defined in its superclass?
-A. Method Overloading
-B. Method Overriding
-C. Encapsulation
-D. Data Abstraction
-Answer: B
-Explanation: Method overriding allows runtime polymorphism by replacing a superclass method implementation.
-"""

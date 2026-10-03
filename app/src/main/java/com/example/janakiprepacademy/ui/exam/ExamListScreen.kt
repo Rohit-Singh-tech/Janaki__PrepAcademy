@@ -171,11 +171,21 @@ private fun MockTestCard(exam: Exam, onClick: () -> Unit) {
                         color = Color.DarkGray
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${exam.sections.sumOf { it.questions.size }} Questions • ${exam.totalDurationMinutes} min",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
+                    val qCount = exam.sections.sumOf { it.questions.size }
+                    if (qCount > 0) {
+                        Text(
+                            text = "$qCount Questions • ${exam.totalDurationMinutes} min",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    } else {
+                        Text(
+                            text = "0 Questions • Upload Paper via Admin",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = JanakiOrangeDark,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
                 if (exam.isFree) {
                     Surface(

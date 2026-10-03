@@ -57,6 +57,71 @@ fun ExamPlayerScreen(
     val allQuestions = remember { exam.sections.flatMap { it.questions } }
     val totalQuestions = allQuestions.size
 
+    if (totalQuestions == 0) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(exam.title) },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = PureWhite),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.UploadFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(56.dp),
+                            tint = JanakiOrange
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            "No Questions Uploaded Yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = JanakiMaroon
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Please upload an official question paper (PDF) for '${exam.title}' in the Admin Panel to start practicing.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.DarkGray,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = onBackClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = JanakiMaroon)
+                        ) {
+                            Text("Go Back")
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+
     // CBT State Management
     var currentIndex by remember { mutableIntStateOf(0) }
     val responses = remember {
