@@ -18,6 +18,7 @@ object SampleDataProvider {
 
     fun init(context: android.content.Context) {
         try {
+            QuestionBankRepository.init(context)
             val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
             val json = prefs.getString(KEY_CUSTOM_EXAMS, null)
             if (!json.isNullOrBlank()) {
@@ -114,7 +115,9 @@ object SampleDataProvider {
 
     fun getAvailableExams(): List<Exam> {
         val customIds = customExams.map { it.examId }.toSet()
-        return customExams + builtInExams.filter { it.examId !in customIds }
+        val officialFromBank = QuestionBankRepository.getLoadedOfficialExams().filter { it.examId !in customIds }
+        val allSeenIds = (customIds + officialFromBank.map { it.examId }).toSet()
+        return customExams + officialFromBank + builtInExams.filter { it.examId !in allSeenIds }
     }
 
     private val builtInExams: List<Exam> by lazy {

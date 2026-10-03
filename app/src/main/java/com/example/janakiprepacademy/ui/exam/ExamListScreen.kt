@@ -20,9 +20,13 @@ import com.example.janakiprepacademy.data.model.Exam
 import com.example.janakiprepacademy.data.model.ExamTrack
 import com.example.janakiprepacademy.ui.theme.*
 
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
+import com.example.janakiprepacademy.data.QuestionBankRepository
+
 /**
  * Exam List Screen — Shows all available mock tests for a specific exam track.
- * Lists free and premium tests with attempt counts.
+ * Lists free and premium tests with attempt counts and Real CBT Exam Simulator.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +36,7 @@ fun ExamListScreen(
     onBackClick: () -> Unit,
     onSyllabusClick: ((ExamTrack) -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val exams = SampleDataProvider.getAvailableExams().filter { it.category == examTrack }
 
     Scaffold(
@@ -45,7 +50,7 @@ fun ExamListScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "${exams.size} mock tests available",
+                            "${exams.size} tests available • 150 Qs Real Ratio",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray
                         )
@@ -81,7 +86,82 @@ fun ExamListScreen(
             // Exam info header
             item {
                 ExamInfoCard(examTrack)
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            // Real CBT Exam Simulator Action Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = JanakiMaroon),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("⚡", fontSize = 20.sp)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        "Real CBT Simulation Exam",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        "150 Qs • Exact Official Ratio • Fresh Scenario",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = PureWhite.copy(alpha = 0.85f)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            "Simulates the actual examination center. Pulls a balanced 150-question mock paper from the 5,000+ question bank, dynamically prioritizing unseen questions so every question is tested.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = PureWhite.copy(alpha = 0.9f),
+                            lineHeight = 16.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = {
+                                val simExam = QuestionBankRepository.generateRealCbtExamSimulation(examTrack, context)
+                                onExamClick(simExam.examId)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = JanakiOrange),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Generate & Start Real CBT Exam",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
             }
 
             items(exams) { exam ->
