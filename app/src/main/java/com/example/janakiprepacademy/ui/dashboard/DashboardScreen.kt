@@ -44,7 +44,8 @@ fun DashboardScreen(
     onExamTrackClick: (ExamTrack) -> Unit,
     onLeaderboardClick: () -> Unit,
     onProfileClick: () -> Unit,
-    onAdminClick: () -> Unit = {}
+    onAdminClick: () -> Unit = {},
+    onSyllabusClick: (String) -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -244,7 +245,7 @@ fun DashboardScreen(
                     subtitle = "Exam Pattern",
                     color = JanakiMaroon,
                     modifier = Modifier.weight(1f),
-                    onClick = { /* Navigate to syllabus */ }
+                    onClick = { onSyllabusClick("ALL") }
                 )
             }
 

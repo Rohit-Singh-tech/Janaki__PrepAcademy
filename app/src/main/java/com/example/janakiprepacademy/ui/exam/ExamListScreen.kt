@@ -29,7 +29,8 @@ import com.example.janakiprepacademy.ui.theme.*
 fun ExamListScreen(
     examTrack: ExamTrack,
     onExamClick: (String) -> Unit,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onSyllabusClick: ((ExamTrack) -> Unit)? = null
 ) {
     val exams = SampleDataProvider.getAvailableExams().filter { it.category == examTrack }
 
@@ -53,6 +54,13 @@ fun ExamListScreen(
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (onSyllabusClick != null) {
+                        IconButton(onClick = { onSyllabusClick(examTrack) }) {
+                            Icon(Icons.Filled.MenuBook, contentDescription = "View Syllabus", tint = JanakiMaroon)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

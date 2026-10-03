@@ -19,6 +19,7 @@ import com.example.janakiprepacademy.ui.leaderboard.LeaderboardScreen
 import com.example.janakiprepacademy.ui.onboarding.OnboardingScreen
 import com.example.janakiprepacademy.ui.profile.ProfileScreen
 import com.example.janakiprepacademy.ui.scorecard.ScorecardScreen
+import com.example.janakiprepacademy.ui.syllabus.SyllabusScreen
 
 /**
  * Main navigation graph for Janaki PrepAcademy.
@@ -89,6 +90,9 @@ fun JanakiNavGraph(
                 },
                 onAdminClick = {
                     navController.navigate(Screen.AdminPanel.route)
+                },
+                onSyllabusClick = { trackName ->
+                    navController.navigate(Screen.Syllabus.createRoute(trackName))
                 }
             )
         }
@@ -104,7 +108,10 @@ fun JanakiNavGraph(
                 onExamClick = { examId ->
                     navController.navigate(Screen.ExamPlayer.createRoute(examId))
                 },
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onSyllabusClick = { t ->
+                    navController.navigate(Screen.Syllabus.createRoute(t.name))
+                }
             )
         }
 
@@ -176,6 +183,20 @@ fun JanakiNavGraph(
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Syllabus.route,
+            arguments = listOf(navArgument("trackName") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val trackName = backStackEntry.arguments?.getString("trackName") ?: "ALL"
+            SyllabusScreen(
+                initialTrackName = trackName,
+                onBackClick = { navController.popBackStack() },
+                onStartTestClick = { track ->
+                    navController.navigate(Screen.ExamList.createRoute(track.name))
                 }
             )
         }
