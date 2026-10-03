@@ -151,7 +151,22 @@ data class ExamResult(
     val totalQuestions: Int,
     val timeTakenSeconds: Long,
     val totalTimeSeconds: Long,
-    val sectionWiseBreakdown: List<SectionResult> = emptyList()
+    val sectionWiseBreakdown: List<SectionResult> = emptyList(),
+    val questionReviews: List<QuestionReviewItem> = emptyList()
+)
+
+data class QuestionReviewItem(
+    val questionNumber: Int,
+    val sectionName: String,
+    val questionText: String,
+    val questionTextHindi: String,
+    val options: List<QuestionOption>,
+    val userSelectedOption: String?,
+    val correctOption: String,
+    val isCorrect: Boolean,
+    val isSkipped: Boolean,
+    val explanation: String,
+    val explanationHindi: String
 )
 
 data class SectionResult(

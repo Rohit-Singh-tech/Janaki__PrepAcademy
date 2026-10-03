@@ -25,16 +25,27 @@ object SampleDataProvider {
                 val type = object : com.google.gson.reflect.TypeToken<List<Exam>>() {}.type
                 val saved: List<Exam> = com.google.gson.Gson().fromJson(json, type)
                 customExams.clear()
-                // Purge any legacy static mock tests that had dummy questions
+                // Purge any legacy static mock tests that had dummy questions, or on-the-fly CBT simulation sessions
                 val filtered = saved.filterNot { exam ->
-                    exam.examId in setOf("stet_cs_mock_01", "stet_cs_mock_02", "bpsc_tre_cs_mock_01", "bpsc_tre_cs_mock_02", "bpsc_cce_mock_01", "upsc_prelims_mock_01") &&
-                            exam.sections.all { s -> s.questions.all { q -> q.questionId.startsWith("stet_q_") || q.questionId.startsWith("bpsc_q_") } }
+                    (exam.examId in setOf("stet_cs_mock_01", "stet_cs_mock_02", "bpsc_tre_cs_mock_01", "bpsc_tre_cs_mock_02", "bpsc_cce_mock_01", "upsc_prelims_mock_01") &&
+                            exam.sections.all { s -> s.questions.all { q -> q.questionId.startsWith("stet_q_") || q.questionId.startsWith("bpsc_q_") } }) ||
+                    exam.examId.startsWith("cbt_sim_") ||
+                    exam.title.contains("Simulation", ignoreCase = true) ||
+                    exam.title.contains("CBT-SIM", ignoreCase = true)
                 }
                 customExams.addAll(filtered)
+                persistExams(context)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    fun getExamById(examId: String): Exam? {
+        if (QuestionBankRepository.activeSimulationExam?.examId == examId) {
+            return QuestionBankRepository.activeSimulationExam
+        }
+        return getAvailableExams().find { it.examId == examId }
     }
 
     private fun persistExams(context: android.content.Context?) {
@@ -60,7 +71,7 @@ object SampleDataProvider {
     }
 
     fun appendQuestionsToExam(examId: String, newQuestions: List<Question>, context: android.content.Context? = null): Exam? {
-        val target = getAvailableExams().find { it.examId == examId } ?: return null
+        val target = getExamById(examId) ?: return null
         val groupedNew = newQuestions.groupBy { it.sectionName.ifBlank { "Domain Subject" } }
 
         val existingSections = target.sections.toMutableList()

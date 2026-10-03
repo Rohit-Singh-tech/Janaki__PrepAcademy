@@ -22,6 +22,7 @@ object QuestionBankRepository {
     private val allCsQuestions = mutableListOf<Question>()
     private val allNonCsQuestions = mutableListOf<Question>()
     private var isInitialized = false
+    var activeSimulationExam: Exam? = null
 
     fun init(context: Context) {
         if (isInitialized) return
@@ -237,8 +238,8 @@ object QuestionBankRepository {
         seenIds.addAll(chosenQuestionIds)
         prefs.edit().putStringSet(KEY_SEEN_IDS, seenIds).apply()
 
-        // Register exam into SampleDataProvider for instant CBT execution
-        SampleDataProvider.addCustomExam(exam, context)
+        // Retain as active simulation session for player without polluting the persistent catalogue
+        activeSimulationExam = exam
 
         return exam
     }

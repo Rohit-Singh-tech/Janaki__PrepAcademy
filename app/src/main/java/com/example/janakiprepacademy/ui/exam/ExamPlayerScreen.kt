@@ -21,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import com.example.janakiprepacademy.data.ExamAttemptRepository
 import com.example.janakiprepacademy.data.SampleDataProvider
 import com.example.janakiprepacademy.data.model.*
 import com.example.janakiprepacademy.ui.theme.*
@@ -46,7 +48,8 @@ fun ExamPlayerScreen(
     onSubmitExam: (String) -> Unit,
     onBackClick: () -> Unit
 ) {
-    val exam = remember { SampleDataProvider.getAvailableExams().find { it.examId == examId } }
+    val context = LocalContext.current
+    val exam = remember { SampleDataProvider.getExamById(examId) }
     if (exam == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Exam not found", color = Color.Red)
@@ -136,14 +139,21 @@ fun ExamPlayerScreen(
 
     // Timer state
     var remainingSeconds by remember { mutableLongStateOf(exam.totalDurationMinutes * 60L) }
+
+    val performSubmit: () -> Unit = {
+        val timeSpent = (exam.totalDurationMinutes * 60L) - remainingSeconds
+        val result = ExamAttemptRepository.evaluateExam(exam, responses, maxOf(1L, timeSpent))
+        ExamAttemptRepository.saveAttempt(result, context)
+        onSubmitExam(result.attemptId)
+    }
+
     LaunchedEffect(Unit) {
         while (remainingSeconds > 0) {
             delay(1000)
             remainingSeconds--
         }
         // Auto-submit when timer expires
-        val attemptId = UUID.randomUUID().toString()
-        onSubmitExam(attemptId)
+        performSubmit()
     }
 
     // Mark current question as visited
@@ -320,8 +330,7 @@ fun ExamPlayerScreen(
             totalQuestions = totalQuestions,
             onConfirm = {
                 showSubmitDialog = false
-                val attemptId = UUID.randomUUID().toString()
-                onSubmitExam(attemptId)
+                performSubmit()
             },
             onDismiss = { showSubmitDialog = false }
         )
