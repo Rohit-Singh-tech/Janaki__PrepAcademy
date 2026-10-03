@@ -117,7 +117,11 @@ object SampleDataProvider {
         val customIds = customExams.map { it.examId }.toSet()
         val officialFromBank = QuestionBankRepository.getLoadedOfficialExams().filter { it.examId !in customIds }
         val allSeenIds = (customIds + officialFromBank.map { it.examId }).toSet()
-        return customExams + officialFromBank + builtInExams.filter { it.examId !in allSeenIds }
+        val officialCategories = (customExams + officialFromBank).map { it.category }.toSet()
+        val filteredBuiltIn = builtInExams.filter { builtIn ->
+            builtIn.examId !in allSeenIds && (builtIn.sections.isNotEmpty() || builtIn.category !in officialCategories)
+        }
+        return customExams + officialFromBank + filteredBuiltIn
     }
 
     private val builtInExams: List<Exam> by lazy {

@@ -499,8 +499,25 @@ app.post('/api/admin/exams/:id/questions', (req, res) => {
 });
 
 // ━━━ EXAMS & CBT APIS ━━━
-app.get('/api/exams', (req, res) => {
+app.get('/api/exams', async (req, res) => {
   const { track } = req.query;
+  if (pool) {
+    try {
+      let query = 'SELECT id, exam_code, title, exam_track, description, duration_minutes, total_marks, total_questions, negative_marking, has_five_options, is_live, is_free FROM exams';
+      const params = [];
+      if (track) {
+        query += ' WHERE LOWER(exam_track) = LOWER($1)';
+        params.push(track);
+      }
+      query += ' ORDER BY exam_code ASC;';
+      const dbRes = await pool.query(query, params);
+      if (dbRes.rows.length > 0) {
+        return res.json({ success: true, count: dbRes.rows.length, data: dbRes.rows });
+      }
+    } catch (err) {
+      console.error('Error fetching exams from DB:', err.message);
+    }
+  }
   let results = MOCK_EXAMS;
   if (track) {
     results = results.filter(e => e.exam_track.toLowerCase() === track.toLowerCase());
@@ -508,8 +525,28 @@ app.get('/api/exams', (req, res) => {
   res.json({ success: true, count: results.length, data: results });
 });
 
-app.get('/api/exams/:id', (req, res) => {
-  const exam = MOCK_EXAMS.find(e => e.id === req.params.id);
+app.get('/api/exams/:id', async (req, res) => {
+  const examId = req.params.id;
+  if (pool) {
+    try {
+      const examRes = await pool.query(
+        'SELECT * FROM exams WHERE id::text = $1 OR exam_code = $1;',
+        [examId]
+      );
+      if (examRes.rows.length > 0) {
+        const exam = examRes.rows[0];
+        const qRes = await pool.query(
+          'SELECT * FROM questions WHERE exam_id = $1 ORDER BY question_number ASC;',
+          [exam.id]
+        );
+        exam.questions = qRes.rows;
+        return res.json({ success: true, data: exam });
+      }
+    } catch (err) {
+      console.error('Error fetching exam details from DB:', err.message);
+    }
+  }
+  const exam = MOCK_EXAMS.find(e => e.id === examId || e.exam_code === examId);
   if (!exam) {
     return res.status(404).json({ success: false, message: 'Exam not found' });
   }
