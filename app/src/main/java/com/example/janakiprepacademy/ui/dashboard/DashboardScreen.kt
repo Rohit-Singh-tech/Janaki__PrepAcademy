@@ -369,10 +369,14 @@ private fun ExamCategoryCard(track: ExamTrack, onClick: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Exam config badges
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ExamBadge("${track.totalQuestions}Q")
-                        ExamBadge("${track.durationMinutes} min")
+                    // Exam config badges (FlowRow wraps cleanly onto next line without vertical letter stacking)
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ExamBadge("${track.totalQuestions} Qs")
+                        ExamBadge("${track.durationMinutes} Min")
                         if (track.hasNegativeMarking) {
                             ExamBadge("−ve Marking")
                         } else {
@@ -397,13 +401,15 @@ private fun ExamCategoryCard(track: ExamTrack, onClick: () -> Unit) {
 private fun ExamBadge(text: String) {
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = Color.White.copy(alpha = 0.2f)
+        color = Color.White.copy(alpha = 0.22f)
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
             color = Color.White,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }

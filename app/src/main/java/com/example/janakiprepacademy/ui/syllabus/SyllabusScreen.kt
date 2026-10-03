@@ -485,17 +485,30 @@ private fun ExamSyllabusCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Meta badges bar: Marks, Duration, Penalty
-            Row(
+            // Meta badges box: Total Marks, Duration, Negative Marking
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(WarmGray, RoundedCornerShape(10.dp))
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.SpaceAround
+                    .background(WarmGray, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                MetaPill(icon = Icons.Filled.Grade, label = syllabus.totalMarks)
-                MetaPill(icon = Icons.Filled.Timer, label = syllabus.duration)
-                MetaPill(icon = Icons.Filled.Gavel, label = syllabus.negativeMarking)
+                MetaInfoRow(
+                    icon = Icons.Filled.Grade,
+                    label = "Total Marks",
+                    value = syllabus.totalMarks
+                )
+                MetaInfoRow(
+                    icon = Icons.Filled.Timer,
+                    label = "Duration",
+                    value = syllabus.duration
+                )
+                MetaInfoRow(
+                    icon = Icons.Filled.Gavel,
+                    label = "Marking",
+                    value = syllabus.negativeMarking,
+                    isPositive = syllabus.negativeMarking.contains("NO", ignoreCase = true) || syllabus.negativeMarking.contains("None", ignoreCase = true)
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -705,11 +718,36 @@ private fun TopicDetailBlock(topic: SyllabusTopic) {
 }
 
 @Composable
-private fun MetaPill(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = JanakiMaroon, modifier = Modifier.size(13.dp))
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(label, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
+private fun MetaInfoRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    isPositive: Boolean = false
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = JanakiMaroon,
+            modifier = Modifier.size(15.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "$label: ",
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF37474F)
+        )
+        Text(
+            text = value,
+            fontSize = 11.5.sp,
+            fontWeight = if (isPositive) FontWeight.Bold else FontWeight.Medium,
+            color = if (isPositive) CorrectGreen else Color(0xFF212121),
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
